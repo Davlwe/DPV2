@@ -1,10 +1,11 @@
 import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-from PySide6.QtCore import QEvent, QEasingCurve, QPoint, QPropertyAnimation, Qt, QTimer
+from PySide6.QtCore import QEvent, QPoint, Qt, QTimer
 from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (
-    QApplication, QDialog, QDialogButtonBox, QLabel, QMenu, QMessageBox,
+    QApplication, QDialog, QDialogButtonBox, QGraphicsDropShadowEffect, QLabel, QMenu, QMessageBox,
     QPlainTextEdit, QPushButton, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
@@ -14,6 +15,7 @@ from reminders import REMINDER_LEAD, pending_reminders
 from preferences import Preferences
 from settings_dialog import SettingsDialog
 from startup import StartupRegistration
+from idle_behavior import IDLE, IdleController, PetSprite
 
 
 class PetWindow(QWidget):
@@ -27,21 +29,38 @@ class PetWindow(QWidget):
         self.setWindowTitle("SuperDpet — My Desktop Pet")
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setFixedSize(200, 270)
+        sprite = QPixmap(str(Path(__file__).resolve().parent / "assets" / "superdpet_fullbody_1024.png"))
+        self.has_sprite = not sprite.isNull()
+        self.setFixedSize(288, 400) if self.has_sprite else self.setFixedSize(200, 270)
         self.press_position = None
         self.dragging = False
         self.system_drag = False
         self.drag_threshold = QApplication.startDragDistance()
         self.setMouseTracking(True)
 
-        # Child widgets live inside this window; only the square moves.
-        self.pet = QLabel(self)
-        self.pet.setGeometry(50, 80, 100, 100)
-        self.pet.setStyleSheet("background-color: #6C8CFF;")
+        # Child widgets live inside this window; only the pet moves.
+        self.pet = PetSprite(self)
+        if self.has_sprite:
+            self.pet.setGeometry(16, 64, 256, 256)
+            self.pet.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.pet.setPixmap(sprite.scaled(
+                256, 256, Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            ))
+            self.pet.setStyleSheet("background: transparent;")
+            self.reminder_glow = QGraphicsDropShadowEffect(self.pet)
+            self.reminder_glow.setOffset(0, 0)
+            self.reminder_glow.setBlurRadius(20)
+            self.reminder_glow.setColor(QColor("#FFB347"))
+            self.pet.setGraphicsEffect(self.reminder_glow)
+            self.reminder_glow.setEnabled(False)
+        else:
+            self.pet.setGeometry(50, 80, 100, 100)
+            self.pet.setStyleSheet("background-color: #6C8CFF;")
         self.pet.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
 
         self.bubble = QLabel("Hello!", self)
-        self.bubble.setGeometry(30, 10, 140, 45)
+        self.bubble.setGeometry((self.width() - 140) // 2, 10, 140, 45)
         self.bubble.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.bubble.setStyleSheet(
             "background-color: white; color: #222222;"
@@ -52,7 +71,7 @@ class PetWindow(QWidget):
 
         # All controls are hidden together when the interaction times out.
         self.note_actions = QWidget(self)
-        self.note_actions.setGeometry(5, 230, 190, 32)
+        self.note_actions.setGeometry((self.width() - 190) // 2, self.height() - 40, 190, 32)
         self.add_button = QPushButton("Add note", self.note_actions)
         self.add_button.setGeometry(0, 0, 90, 30)
         self.add_button.clicked.connect(self.add_note)
@@ -80,21 +99,12 @@ class PetWindow(QWidget):
 
         # Keep an obvious exit available now that the title bar is gone.
         self.quit_button = QPushButton("Quit", self)
-        self.quit_button.setGeometry(65, 195, 70, 28)
+        self.quit_button.setGeometry((self.width() - 70) // 2, self.height() - 75, 70, 28)
         self.quit_button.clicked.connect(self.close)
         self.quit_button.hide()
         for control in (self.note_actions, self.add_button, self.view_button, self.quit_button):
             control.setMouseTracking(True)
             control.installEventFilter(self)
-
-        self.idle_animation = QPropertyAnimation(self.pet, b"pos", self)
-        self.idle_animation.setDuration(3200)
-        self.idle_animation.setStartValue(QPoint(50, 80))
-        self.idle_animation.setKeyValueAt(0.5, QPoint(50, 72))
-        self.idle_animation.setEndValue(QPoint(50, 80))
-        self.idle_animation.setEasingCurve(QEasingCurve.Type.InOutSine)
-        self.idle_animation.setLoopCount(-1)  # Repeat until the app closes.
-        self.idle_animation.start()
 
         # A separate, non-modal message keeps long notes readable without
         # replacing the hello bubble or blocking dragging and note controls.
@@ -124,6 +134,11 @@ class PetWindow(QWidget):
         if self.store.load_error is not None:
             QTimer.singleShot(0, self.show_load_error)
         QTimer.singleShot(0, self.offer_startup_permission)
+        screen = self.screen()
+        if screen is not None:
+            self.move(screen.availableGeometry().center() - self.rect().center())
+        self.idle = IdleController(self)
+        self.idle_animation = self.idle.bob
 
     def offer_startup_permission(self):
         if (self.quitting or self.preferences.startup_permission is not None
@@ -163,15 +178,22 @@ class PetWindow(QWidget):
             self.reminder_text.appendPlainText(
                 f"{note['text']}\nDue: {due:%Y-%m-%d %H:%M:%S %Z}\n"
             )
-        self.pet.setStyleSheet("background-color: #FFB347;")
-        self.idle_animation.setDuration(1200)
+        self.set_reminder_appearance(True)
+        self.idle_animation.setDuration(IDLE.reminder_bob_ms)
         self.reminder_dialog.show()
         self.reminder_dialog.raise_()
 
     def finish_reminder(self, result):
         self.reminder_text.clear()
-        self.pet.setStyleSheet("background-color: #6C8CFF;")
-        self.idle_animation.setDuration(3200)
+        self.set_reminder_appearance(False)
+        self.idle_animation.setDuration(IDLE.bob_ms)
+
+    def set_reminder_appearance(self, active):
+        if self.has_sprite:
+            self.reminder_glow.setEnabled(active)
+        else:
+            color = "#FFB347" if active else "#6C8CFF"
+            self.pet.setStyleSheet(f"background-color: {color};")
 
     def create_test_reminder(self):
         try:
@@ -254,7 +276,7 @@ class PetWindow(QWidget):
         self.quitting = True
         self.reminder_timer.stop()
         self.bubble_timer.stop()
-        self.idle_animation.stop()
+        self.idle.stop()
         self.tray.hide()
 
     def closeEvent(self, event):
