@@ -5,12 +5,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from PySide6.QtCore import QIODevice, QSaveFile, QStandardPaths
+from PySide6.QtCore import QIODevice, QSaveFile, QStandardPaths, QObject, Signal
 from reminders import DEFAULT_REMINDER_MINUTES, validate_reminder_minutes
 
 
-class NoteStore:
+class NoteStore(QObject):
+    changed = Signal()
+
     def __init__(self, path=None):
+        super().__init__()
         self.path = Path(path) if path is not None else Path(
             QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
         ) / "notes.json"
@@ -68,6 +71,7 @@ class NoteStore:
             raise OSError(file.errorString())
         # Only update the visible state after saving succeeds.
         self.notes = notes
+        self.changed.emit()
 
     def add(self, text, due, reminder_minutes=DEFAULT_REMINDER_MINUTES):
         validate_reminder_minutes(reminder_minutes)
@@ -96,4 +100,11 @@ class NoteStore:
         self._save([
             dict(note, reminded=True) if note["id"] in note_ids else note
             for note in self.notes
+        ])
+
+    def delete_completed(self, note_id):
+        """Delete only the selected completed note, leaving pending notes intact."""
+        self._save([
+            note for note in self.notes
+            if not (note["id"] == note_id and note["completed"])
         ])

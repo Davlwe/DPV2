@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 from PySide6.QtWidgets import QApplication, QPushButton
 
 import main
-from notes_dialog import AddNoteDialog
+from notes_dialog import AddNoteDialog, NotesDialog
 from preferences import Preferences
 from reminders import pending_reminders
 from settings_dialog import SettingsDialog
@@ -40,6 +40,40 @@ class ReminderChoiceTests(unittest.TestCase):
             self.assertEqual(pending_reminders([dict(note, reminded=True)], due), [])
         reloaded = NoteStore(self.store.path)
         self.assertEqual([n['reminder_minutes'] for n in reloaded.notes], [1, 5, 10])
+
+    def test_delete_completed_selection_persists_and_protects_pending(self):
+        self.store.add('pending', self.now, 1)
+        self.store.add('finished', self.now, 10)
+        self.store.complete(self.store.notes[1]['id'])
+        pending = dict(self.store.notes[0])
+        dialog = NotesDialog(self.store)
+        self.addCleanup(dialog.close)
+        self.assertFalse(dialog.delete_button.isEnabled())
+        dialog.list_widget.setCurrentRow(0)
+        self.assertFalse(dialog.delete_button.isEnabled())
+        self.store.delete_completed(pending['id'])
+        self.assertEqual(len(self.store.notes), 2)
+        dialog.list_widget.setCurrentRow(1)
+        self.assertTrue(dialog.delete_button.isEnabled())
+        dialog.delete_button.click()
+        self.assertEqual(self.store.notes, [pending])
+        self.assertEqual(NoteStore(self.store.path).notes, [pending])
+        self.assertEqual(dialog.list_widget.count(), 1)
+
+    def test_failed_delete_keeps_note_and_reports_error(self):
+        self.store.add('finished', self.now)
+        self.store.complete(self.store.notes[0]['id'])
+        original = self.store.path.read_bytes()
+        dialog = NotesDialog(self.store)
+        self.addCleanup(dialog.close)
+        dialog.list_widget.setCurrentRow(0)
+        with patch.object(self.store, '_save', side_effect=OSError('disk error')), \
+                patch('notes_dialog.QMessageBox.warning') as warning:
+            dialog.delete_button.click()
+        warning.assert_called_once()
+        self.assertEqual(len(self.store.notes), 1)
+        self.assertEqual(dialog.list_widget.count(), 1)
+        self.assertEqual(self.store.path.read_bytes(), original)
 
     def test_legacy_migration_does_not_write_until_next_save_or_lose_fields(self):
         legacy = [{'id': 'old', 'text': 'Keep this text', 'due_at': self.now.isoformat(),

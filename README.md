@@ -9,7 +9,7 @@ Run from this checkout:
 On native Windows, use `.venv\Scripts\python.exe main.py` with a Windows Python
 environment containing PySide6.
 
-The standing pet blinks every 2–5 seconds, closing its eyes for 120–180ms after
+The pet blinks in either pose every 2–5 seconds, closing its eyes for 120–180ms after
 the closed-eye frame has actually painted. Controls and menus do not suspend
 blinking. Dragging, modal dialogs, active reminders, and waving do; a fresh
 random delay starts afterward. The tray-unavailable notice is non-modal.
@@ -29,6 +29,31 @@ The standing, standing-blink, and standing-wave 1024px frames are loaded relativ
 to `main.py`; no source assets are rewritten. Normal idle uses neither the older
 poster-like full-body image nor the original bust sprites.
 Missing images produce terminal errors and retain a visible fallback.
+
+Right-click **Sit down** or **Stand up** to change the idle pose. Standing is
+the default when no pose preference exists. The selected pose is saved in
+`preferences.json` and restored on restart; changing startup or reminder settings
+preserves it. A failed save leaves the visible pose unchanged. Sitting uses the
+existing transparent seated open-eye and blink sprites on the same fixed canvas
+and ground anchor as standing. A short click uses that pose's wave sprite, then
+returns to its open-eye sprite and resumes its blinking. The seated wave keeps
+the folded legs, raises one hand, and gently closes the eyes throughout the wave.
+Only the right-click pose action changes the selected pose or saved preference.
+Dragging cancels the wave and never starts a greeting. If seated assets cannot
+be loaded, the app uses standing and disables the pose menu item.
+
+## Task mood
+
+The pet has a quiet, steady glow: blue **Calm** when no tasks are pending,
+turquoise **Focused** when pending tasks are not overdue, and rose **Concerned**
+when any pending task reaches its due time. Completed notes never count as overdue.
+Finishing the last pending task turns the glow gold **Happy**, keeping the existing
+brief completion celebration. Happy lasts until a new pending task is added or
+all completed notes are deleted. Restarting with only completed notes starts Calm.
+Hover over the pet or tray icon to see the mood and pending/completed/overdue counts
+(overdue tasks are included in pending). Updates happen after successful note saves
+and every second to detect due times. Mood does not open messages or steal focus;
+orange reminder alerts take priority, then restore the current mood glow.
 
 ## Reminder choices
 

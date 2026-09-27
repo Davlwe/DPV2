@@ -17,6 +17,7 @@ from preferences import Preferences
 from settings_dialog import SettingsDialog
 from startup import StartupRegistration
 from idle_behavior import IdleController, PetSprite
+from mood import TaskMood, MOOD_COLORS, MOOD_REFRESH_MS
 
 GREETINGS = ("Hi, how can I help you today?", "Wanna add a note or reminder?")
 
@@ -68,6 +69,21 @@ class PetWindow(QWidget):
             fallback.fill(QColor('#6C8CFF'))
             self.pet.set_frames(fallback, QPixmap())
         self.pet.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.pose = 'standing'
+        self.pose_frames = {'standing': (self.pet.open_frame, self.pet.blink_frame,
+                                         self.pet.wave_frame)}
+        sitting = QPixmap(str(Path(__file__).resolve().parent / 'assets' / 'superdpet_sitting_1024.png'))
+        sitting_blink = QPixmap(str(Path(__file__).resolve().parent / 'assets' / 'superdpet_sitting_blink_1024.png'))
+        sitting_wave = QPixmap(str(Path(__file__).resolve().parent / 'assets' / 'superdpet_sitting_wave_1024.png'))
+        if (self.has_sprite and not sitting.isNull() and not sitting_blink.isNull()
+                and sitting.size() == sprite.size() == sitting_blink.size()):
+            # Every transient frame belongs to the selected pose.
+            self.pose_frames['sitting'] = (sitting, sitting_blink, sitting_wave)
+        else:
+            print('[SuperDpet ERROR] Sitting open/blink assets missing, invalid, or mismatched; using standing.', flush=True)
+        if self.preferences.pose == 'sitting' and 'sitting' in self.pose_frames:
+            self.pose = 'sitting'
+            self.pet.set_frames(*self.pose_frames[self.pose])
 
         self.bubble = QLabel(self)
         self.bubble.setGeometry(8, 2, self.width() - 16, 52)
@@ -99,6 +115,9 @@ class PetWindow(QWidget):
         self.bubble_timer.timeout.connect(self.hide_interaction)
 
         self.settings_menu = QMenu(self)
+        self.pose_action = self.settings_menu.addAction(
+            'Stand up' if self.pose == 'sitting' else 'Sit down', self.toggle_pose)
+        self.pose_action.setEnabled('sitting' in self.pose_frames)
         self.settings_menu.addAction("Settings", self.show_settings)
         self.settings_menu.addAction("View notes", self.view_notes)
         self.settings_menu.addAction(
@@ -145,6 +164,60 @@ class PetWindow(QWidget):
         if screen is not None:
             self.move(screen.availableGeometry().center() - self.rect().center())
         self.idle = IdleController(self)
+        self.mood = TaskMood()
+        self.mood_timer = QTimer(self)
+        self.mood_timer.setInterval(MOOD_REFRESH_MS)
+        self.mood_timer.timeout.connect(self.refresh_mood)
+        self.store.changed.connect(self.refresh_mood)
+        self.refresh_mood()
+        self.mood_timer.start()
+
+    def toggle_pose(self):
+        if self.quitting:
+            return
+        target = 'sitting' if self.pose == 'standing' else 'standing'
+        if target not in self.pose_frames:
+            print(f'[SuperDpet ERROR] Cannot switch to {target}; assets unavailable.', flush=True)
+            return
+        try:
+            self.preferences.save_pose(target)
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, 'Pose not saved', str(error))
+            return
+        self.idle.pause()
+        self.pet.stop_action()
+        self.pose = target
+        self.pet.set_frames(*self.pose_frames[target])
+        self.pose_action.setText('Stand up' if target == 'sitting' else 'Sit down')
+        self.pet.play_action('alert' if self.reminder_active else 'pose')
+        self.apply_task_glow()
+        self.idle.refresh()
+
+    def refresh_mood(self, completed_task=False):
+        if self.quitting:
+            return
+        self.mood.refresh(self.store.notes, completed_task=completed_task)
+        description = self.mood.description()
+        if self.store.load_error:
+            description = "Task mood unavailable: notes could not be loaded"
+        self.setToolTip(description)
+        self.tray.setToolTip(f"SuperDpet — {description}")
+        self.apply_task_glow()
+
+    def apply_task_glow(self):
+        color = QColor("#FFB347" if self.reminder_active else MOOD_COLORS[self.mood.state])
+        if self.has_sprite:
+            color.setAlpha(230 if self.reminder_active else 145)
+            self.reminder_glow.setColor(color)
+            self.reminder_glow.setBlurRadius(20 if self.reminder_active else 14)
+            self.reminder_glow.setEnabled(True)
+        elif self.pet.open_frame.toImage().pixelColor(0, 0) != color:
+            self.pet.open_frame.fill(color)
+            self.pet.show_frame(self.pet.frame_name)
+
+    def task_completed(self):
+        self.refresh_mood(completed_task=True)
+        self.idle.completed()
 
     def offer_startup_permission(self):
         if (self.quitting or self.preferences.startup_permission is not None
@@ -194,12 +267,7 @@ class PetWindow(QWidget):
 
     def set_reminder_appearance(self, active):
         self.reminder_active = active
-        if self.has_sprite:
-            self.reminder_glow.setEnabled(active)
-        else:
-            color = "#FFB347" if active else "#6C8CFF"
-            self.pet.open_frame.fill(QColor(color))
-            self.pet.set_blinking(False)
+        self.apply_task_glow()
         if active:
             self.hide_interaction()
             self.idle.pause()
@@ -294,6 +362,7 @@ class PetWindow(QWidget):
     def stop_background_work(self):
         self.quitting = True
         self.reminder_timer.stop()
+        self.mood_timer.stop()
         self.bubble_timer.stop()
         self.idle.stop()
         self.tray.hide()
@@ -321,7 +390,7 @@ class PetWindow(QWidget):
     def view_notes(self):
         self.hide_interaction()
         dialog = NotesDialog(self.store, self)
-        dialog.note_completed.connect(self.idle.completed)
+        dialog.note_completed.connect(self.task_completed)
         dialog.exec()
         self.idle.refresh()
 

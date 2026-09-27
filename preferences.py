@@ -15,6 +15,7 @@ class Preferences:
         # None means no decision yet; it never grants permission.
         self.startup_permission = None
         self.default_reminder_minutes = DEFAULT_REMINDER_MINUTES
+        self.pose = "standing"
         self.load_error = None
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
@@ -26,6 +27,11 @@ class Preferences:
             self.startup_permission = permission
             self.default_reminder_minutes = validate_reminder_minutes(
                 data.get("default_reminder_minutes", DEFAULT_REMINDER_MINUTES))
+            pose = data.get("pose", "standing")
+            if pose in ("standing", "sitting"):
+                self.pose = pose
+            else:
+                print('[SuperDpet ERROR] Invalid saved pose; using standing.', flush=True)
         except FileNotFoundError:
             pass
         except (OSError, ValueError) as error:
@@ -39,13 +45,20 @@ class Preferences:
     def save_default_reminder_minutes(self, minutes):
         self._save(self.startup_permission, minutes)
 
-    def _save(self, allowed, minutes):
+    def save_pose(self, pose):
+        if pose not in ("standing", "sitting"):
+            raise ValueError("Pose must be standing or sitting.")
+        self._save(self.startup_permission, self.default_reminder_minutes, pose)
+
+    def _save(self, allowed, minutes, pose=None):
+        pose = self.pose if pose is None else pose
         validate_reminder_minutes(minutes)
         if self.load_error is not None:
             raise OSError("Preferences could not be loaded. The existing file was left untouched.")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         data = (json.dumps({"startup_permission": allowed,
-                            "default_reminder_minutes": minutes}, indent=2) + "\n").encode("utf-8")
+                            "default_reminder_minutes": minutes,
+                            "pose": pose}, indent=2) + "\n").encode("utf-8")
         file = QSaveFile(str(self.path))
         if not file.open(QIODevice.OpenModeFlag.WriteOnly):
             raise OSError(file.errorString())
@@ -57,3 +70,4 @@ class Preferences:
             raise OSError(file.errorString())
         self.startup_permission = allowed
         self.default_reminder_minutes = minutes
+        self.pose = pose

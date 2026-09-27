@@ -248,7 +248,8 @@ class IdleTests(unittest.TestCase):
         self.assertFalse(self.window.pet.blinking)
         self.assertTrue(self.window.reminder_glow.isEnabled())
         self.window.reminder_dialog.reject()
-        self.assertFalse(self.window.reminder_glow.isEnabled())
+        self.assertTrue(self.window.reminder_glow.isEnabled())
+        self.assertEqual(self.window.reminder_glow.color().name(), '#8ca9e8')
 
     def test_tray_notice_never_blocks_blinks(self):
         self.window.explain_missing_tray()

@@ -19,6 +19,7 @@ class IdleSettings:
     presentation_timeout_ms: int = 1200
     happy_ms: int = 900
     alert_ms: int = 1200
+    pose_ms: int = 300
 
 
 IDLE = IdleSettings()
@@ -65,7 +66,7 @@ class PetSprite(QLabel):
         self.stop_action()
         self.action_kind = kind
         self.action_animation.setDuration({'wave': IDLE.wave_ms, 'happy': IDLE.happy_ms,
-                                           'alert': IDLE.alert_ms}[kind])
+                                           'alert': IDLE.alert_ms, 'pose': IDLE.pose_ms}[kind])
         self.action_animation.setLoopCount(-1 if kind == 'alert' else 1)
         self.action_animation.start()
         blink_log(f'ACTION {kind}')
@@ -78,12 +79,12 @@ class PetSprite(QLabel):
 
     def set_frames(self, open_frame, blink_frame, wave_frame=None):
         self.open_frame = open_frame
-        self.blink_frame = (blink_frame if not blink_frame.isNull()
+        self.blink_frame = (blink_frame if blink_frame is not None and not blink_frame.isNull()
                             and blink_frame.size() == open_frame.size() else None)
         self.wave_frame = (wave_frame if wave_frame is not None and not wave_frame.isNull()
                            and wave_frame.size() == open_frame.size() else None)
         if self.wave_frame is None:
-            print('[SuperDpet ERROR] Wave asset missing/invalid; using standing-frame greeting motion.', flush=True)
+            print('[SuperDpet ERROR] Wave asset missing/invalid; using current-pose greeting motion.', flush=True)
         self.show_frame('open')
         if self.blink_frame is None:
             print('[SuperDpet ERROR] Blink image missing/invalid or mismatched canvas; using open-eye sprite.', flush=True)
@@ -127,7 +128,8 @@ class PetSprite(QLabel):
             painter.rotate(0.8 * math.sin(4 * math.pi * self._action_phase) * pulse)
             painter.translate(-image_rect.center().x(), -image_rect.bottom())
         elif self.action_kind:
-            painter.translate(0, -pulse * (5 if self.action_kind == 'alert' else 10))
+            painter.translate(0, -pulse * (3 if self.action_kind == 'pose' else
+                                          5 if self.action_kind == 'alert' else 10))
         painter.drawPixmap(image_rect, pixmap, QRectF(pixmap.rect()))
         if self.action_kind in ('happy', 'alert'):
             color = QColor('#FFB347' if self.action_kind == 'alert' else '#51DCCA')
@@ -304,14 +306,14 @@ class IdleController(QObject):
     def finish_wave(self):
         if self.stopped or self.state != 'waving':
             return
-        blink_log('WAVE complete -> standing idle')
+        blink_log('WAVE complete -> selected pose idle')
         self.pause()
         self.refresh()
 
     def finish_blink(self):
         if self.stopped or self.state == 'waving':
             return
-        blink_log('BLINK complete -> standing idle')
+        blink_log('BLINK complete -> selected pose idle')
         self.pause()
         self.refresh()
 

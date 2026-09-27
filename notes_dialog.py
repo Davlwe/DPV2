@@ -69,6 +69,9 @@ class NotesDialog(QDialog):
         self.complete_button = QPushButton("Mark selected note complete")
         self.complete_button.clicked.connect(self.complete_selected)
         layout.addWidget(self.complete_button)
+        self.delete_button = QPushButton("Delete selected completed note")
+        self.delete_button.clicked.connect(self.delete_selected)
+        layout.addWidget(self.delete_button)
         self.list_widget.currentItemChanged.connect(self.update_button)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
@@ -95,6 +98,20 @@ class NotesDialog(QDialog):
         self.complete_button.setEnabled(any(
             note["id"] == note_id and not note["completed"] for note in self.store.notes
         ))
+        self.delete_button.setEnabled(any(
+            note["id"] == note_id and note["completed"] for note in self.store.notes
+        ))
+
+    def delete_selected(self):
+        item = self.list_widget.currentItem()
+        if item is None:
+            return
+        try:
+            self.store.delete_completed(item.data(Qt.ItemDataRole.UserRole))
+        except OSError as error:
+            QMessageBox.warning(self, "Note not deleted", str(error))
+            return
+        self.refresh()
 
     def complete_selected(self):
         item = self.list_widget.currentItem()
