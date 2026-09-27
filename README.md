@@ -9,6 +9,53 @@ Run from this checkout:
 On native Windows, use `.venv\Scripts\python.exe main.py` with a Windows Python
 environment containing PySide6.
 
+The standing pet blinks every 2–5 seconds, closing its eyes for 120–180ms after
+the closed-eye frame has actually painted. Controls and menus do not suspend
+blinking. Dragging, modal dialogs, active reminders, and waving do; a fresh
+random delay starts afterward. The tray-unavailable notice is non-modal.
+Short left-clicks immediately show the buttons and one random greeting while a
+closed-eye wave plays for 950ms:
+“Hi, how can I help you today?” or “Wanna add a note or reminder?” The only
+left-click buttons are Add Note and View Notes. Quit remains in the right-click
+and tray menus. Repeated clicks restart one wave timer; dragging cancels the
+wave and hides the greeting and buttons.
+Reminders use an orange glow
+and alert motion. Completing a note queues a happy bounce with sparkles after
+the notes dialog closes. Normal idle never moves the desktop window.
+
+Blink and action timings are in `IdleSettings` in `idle_behavior.py`. Temporary
+timestamped diagnostics are controlled by `BLINK_DIAGNOSTICS` in that file.
+The standing, standing-blink, and standing-wave 1024px frames are loaded relative
+to `main.py`; no source assets are rewritten. Normal idle uses neither the older
+poster-like full-body image nor the original bust sprites.
+Missing images produce terminal errors and retain a visible fallback.
+
+## Reminder choices
+
+Add Note has a “Remind me” choice: 1, 5, or 10 minutes before the due time.
+Settings saves the default for future notes (initially 5 minutes), including on
+WSL where startup registration is unavailable. Changing this default does not
+change existing notes; each Add Note form can override it.
+
+Each note stores `reminder_minutes` in `notes.json`. The trigger is its due time
+minus that number of minutes. Legacy notes without the field receive 5 minutes
+when loaded, and the migrated field is persisted on the next successful write.
+Completed/already-reminded notes remain excluded; overdue unshown reminders are
+caught up after restart. The global default lives in `preferences.json` alongside
+startup consent. The developer 5-second test uses the chosen default as its lead.
+
+For an additional visible desktop check (not offscreen), run:
+
+```bash
+.venv/bin/python tests/native_interaction_check.py
+```
+
+It opens a temporary pet, checks painted blink/wave transitions and interactions,
+uses temporary note storage, saves three pet-only captures in `assets/diagnostics/`,
+then closes. Native compositor drag and menu gestures should also be checked
+manually, since synthetic mouse events may not receive Wayland input grabs.
+Pass `--no-captures` to run without writing any images.
+
 ## Optional startup (Milestone 6)
 
 On a supported native desktop, the first launch asks about startup. It is off by

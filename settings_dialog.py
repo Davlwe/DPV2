@@ -1,8 +1,9 @@
 """Explicit startup permission and a reversible Settings control."""
 
 from PySide6.QtWidgets import (
-    QCheckBox, QDialog, QDialogButtonBox, QLabel, QMessageBox, QVBoxLayout,
+    QCheckBox, QDialog, QDialogButtonBox, QLabel, QMessageBox, QVBoxLayout, QComboBox,
 )
+from reminders import REMINDER_CHOICES
 
 
 class SettingsDialog(QDialog):
@@ -26,6 +27,14 @@ class SettingsDialog(QDialog):
         self.status = QLabel()
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
+        reminder_label = QLabel("Default reminder for new notes:")
+        layout.addWidget(reminder_label)
+        self.reminder_default = QComboBox()
+        for minutes in REMINDER_CHOICES:
+            self.reminder_default.addItem(f"{minutes} minute{'s' if minutes != 1 else ''}", minutes)
+        self.reminder_default.setCurrentIndex(self.reminder_default.findData(preferences.default_reminder_minutes))
+        reminder_label.setBuddy(self.reminder_default)
+        layout.addWidget(self.reminder_default)
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
@@ -53,7 +62,8 @@ class SettingsDialog(QDialog):
             registered = False
         self.start_at_login.setChecked(registered and self.preferences.startup_permission is True)
         self.start_at_login.setEnabled(not error)
-        self.buttons.button(QDialogButtonBox.StandardButton.Save).setEnabled(not error)
+        self.reminder_default.setEnabled(not self.preferences.load_error)
+        self.buttons.button(QDialogButtonBox.StandardButton.Save).setEnabled(not self.preferences.load_error)
         self.status.setText(error or (
             "Enabled for your next sign-in. Keep this app and its Python environment in their current locations."
             if self.start_at_login.isChecked() else
@@ -62,12 +72,21 @@ class SettingsDialog(QDialog):
 
     def save(self):
         allowed = self.start_at_login.isChecked()
+        minutes = self.reminder_default.currentData()
         try:
             # Save consent first. The --startup entry point refuses to launch
             # without it, even if removing an old OS entry subsequently fails.
-            self.preferences.save_startup_permission(allowed)
+            if self.start_at_login.isEnabled():
+                self.preferences.save_startup_permission(allowed, minutes)
+            else:
+                # WSL/unsupported startup must not disable ordinary preferences
+                # or silently alter existing startup consent/registration.
+                self.preferences.save_default_reminder_minutes(minutes)
         except (OSError, ValueError) as error:
-            QMessageBox.warning(self, "Startup preference not saved", str(error))
+            QMessageBox.warning(self, "Preferences not saved", str(error))
+            return
+        if not self.start_at_login.isEnabled():
+            self.accept()
             return
         try:
             self.startup.set_enabled(allowed)

@@ -118,7 +118,8 @@ class StartupTests(unittest.TestCase):
         self.assertIn("WSL", startup.unsupported_reason)
         dialog = SettingsDialog(self.preferences, startup)
         self.assertFalse(dialog.start_at_login.isEnabled())
-        self.assertFalse(dialog.buttons.button(QDialogButtonBox.StandardButton.Save).isEnabled())
+        self.assertTrue(dialog.buttons.button(QDialogButtonBox.StandardButton.Save).isEnabled())
+        self.assertTrue(dialog.reminder_default.isEnabled())
         with self.assertRaises(OSError):
             startup.set_enabled(True)
         self.assertFalse(startup.entry_path.exists())

@@ -1,8 +1,9 @@
 import sys
+import random
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QPoint, Qt, QTimer
+from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, QElapsedTimer
 from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QGraphicsDropShadowEffect, QLabel, QMenu, QMessageBox,
@@ -11,17 +12,22 @@ from PySide6.QtWidgets import (
 
 from notes_dialog import AddNoteDialog, NotesDialog
 from storage import NoteStore
-from reminders import REMINDER_LEAD, pending_reminders
+from reminders import pending_reminders
 from preferences import Preferences
 from settings_dialog import SettingsDialog
 from startup import StartupRegistration
-from idle_behavior import IDLE, IdleController, PetSprite
+from idle_behavior import IdleController, PetSprite
+
+GREETINGS = ("Hi, how can I help you today?", "Wanna add a note or reminder?")
 
 
 class PetWindow(QWidget):
     def __init__(self, preferences=None):
         super().__init__()
         self.quitting = False
+        self.reminder_active = False
+        self.drag_activity = QElapsedTimer()
+        self.drag_activity.start()
         self.saved_pet_position = None
         self.store = NoteStore()
         self.preferences = preferences if preferences is not None else Preferences()
@@ -29,7 +35,7 @@ class PetWindow(QWidget):
         self.setWindowTitle("SuperDpet — My Desktop Pet")
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        sprite = QPixmap(str(Path(__file__).resolve().parent / "assets" / "superdpet_fullbody_1024.png"))
+        sprite = QPixmap(str(Path(__file__).resolve().parent / "assets" / "superdpet_standing_1024.png"))
         self.has_sprite = not sprite.isNull()
         self.setFixedSize(288, 400) if self.has_sprite else self.setFixedSize(200, 270)
         self.press_position = None
@@ -38,15 +44,16 @@ class PetWindow(QWidget):
         self.drag_threshold = QApplication.startDragDistance()
         self.setMouseTracking(True)
 
-        # Child widgets live inside this window; only the pet moves.
+        # The window and hit area stay fixed during idle and reaction animations.
         self.pet = PetSprite(self)
         if self.has_sprite:
-            self.pet.setGeometry(16, 64, 256, 256)
+            self.pet.setGeometry(0, 48, 288, 288)
             self.pet.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.pet.setPixmap(sprite.scaled(
-                256, 256, Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            ))
+            # Keep source resolution for smooth painting and aligned blink swaps.
+            blink = QPixmap(str(Path(__file__).resolve().parent / "assets" / "superdpet_standing_blink_1024.png"))
+            wave = QPixmap(str(Path(__file__).resolve().parent / "assets" / "superdpet_standing_wave_1024.png"))
+            self.pet.set_frames(sprite, blink, wave)
+            print('[SuperDpet] Using standing open/blink/wave sprites from assets/.', flush=True)
             self.pet.setStyleSheet("background: transparent;")
             self.reminder_glow = QGraphicsDropShadowEffect(self.pet)
             self.reminder_glow.setOffset(0, 0)
@@ -55,12 +62,17 @@ class PetWindow(QWidget):
             self.pet.setGraphicsEffect(self.reminder_glow)
             self.reminder_glow.setEnabled(False)
         else:
+            print('[SuperDpet ERROR] Cannot load assets/superdpet_standing_1024.png; using blue square fallback.', flush=True)
             self.pet.setGeometry(50, 80, 100, 100)
-            self.pet.setStyleSheet("background-color: #6C8CFF;")
+            fallback = QPixmap(100, 100)
+            fallback.fill(QColor('#6C8CFF'))
+            self.pet.set_frames(fallback, QPixmap())
         self.pet.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
 
-        self.bubble = QLabel("Hello!", self)
-        self.bubble.setGeometry((self.width() - 140) // 2, 10, 140, 45)
+        self.bubble = QLabel(self)
+        self.bubble.setGeometry(8, 2, self.width() - 16, 52)
+        self.bubble.setWordWrap(True)
+        self.bubble.setMargin(4)
         self.bubble.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.bubble.setStyleSheet(
             "background-color: white; color: #222222;"
@@ -72,10 +84,10 @@ class PetWindow(QWidget):
         # All controls are hidden together when the interaction times out.
         self.note_actions = QWidget(self)
         self.note_actions.setGeometry((self.width() - 190) // 2, self.height() - 40, 190, 32)
-        self.add_button = QPushButton("Add note", self.note_actions)
+        self.add_button = QPushButton("Add Note", self.note_actions)
         self.add_button.setGeometry(0, 0, 90, 30)
         self.add_button.clicked.connect(self.add_note)
-        self.view_button = QPushButton("View notes", self.note_actions)
+        self.view_button = QPushButton("View Notes", self.note_actions)
         self.view_button.setGeometry(95, 0, 95, 30)
         self.view_button.clicked.connect(self.view_notes)
         self.note_actions.hide()
@@ -97,12 +109,7 @@ class PetWindow(QWidget):
         self.settings_menu.aboutToShow.connect(self.bubble_timer.stop)
         self.settings_menu.aboutToHide.connect(self.restart_idle_timer)
 
-        # Keep an obvious exit available now that the title bar is gone.
-        self.quit_button = QPushButton("Quit", self)
-        self.quit_button.setGeometry((self.width() - 70) // 2, self.height() - 75, 70, 28)
-        self.quit_button.clicked.connect(self.close)
-        self.quit_button.hide()
-        for control in (self.note_actions, self.add_button, self.view_button, self.quit_button):
+        for control in (self.note_actions, self.add_button, self.view_button):
             control.setMouseTracking(True)
             control.installEventFilter(self)
 
@@ -138,7 +145,6 @@ class PetWindow(QWidget):
         if screen is not None:
             self.move(screen.availableGeometry().center() - self.rect().center())
         self.idle = IdleController(self)
-        self.idle_animation = self.idle.bob
 
     def offer_startup_permission(self):
         if (self.quitting or self.preferences.startup_permission is not None
@@ -179,27 +185,36 @@ class PetWindow(QWidget):
                 f"{note['text']}\nDue: {due:%Y-%m-%d %H:%M:%S %Z}\n"
             )
         self.set_reminder_appearance(True)
-        self.idle_animation.setDuration(IDLE.reminder_bob_ms)
         self.reminder_dialog.show()
         self.reminder_dialog.raise_()
 
     def finish_reminder(self, result):
         self.reminder_text.clear()
         self.set_reminder_appearance(False)
-        self.idle_animation.setDuration(IDLE.bob_ms)
 
     def set_reminder_appearance(self, active):
+        self.reminder_active = active
         if self.has_sprite:
             self.reminder_glow.setEnabled(active)
         else:
             color = "#FFB347" if active else "#6C8CFF"
-            self.pet.setStyleSheet(f"background-color: {color};")
+            self.pet.open_frame.fill(QColor(color))
+            self.pet.set_blinking(False)
+        if active:
+            self.hide_interaction()
+            self.idle.pause()
+            self.pet.play_action('alert')
+        else:
+            self.pet.stop_action()
+        QTimer.singleShot(0, self.idle.refresh)
 
     def create_test_reminder(self):
+        minutes = self.preferences.default_reminder_minutes
         try:
             self.store.add(
                 "[DEVELOPER TEST] Your reminder is working!",
-                datetime.now(timezone.utc) + REMINDER_LEAD + timedelta(seconds=5),
+                datetime.now(timezone.utc) + timedelta(minutes=minutes, seconds=5),
+                minutes,
             )
         except (OSError, ValueError) as error:
             QMessageBox.warning(self, "Test note not saved", str(error))
@@ -232,11 +247,15 @@ class PetWindow(QWidget):
             QMessageBox.Icon.Information, "System tray unavailable",
             "This desktop does not currently provide a system tray. "
             "The pet will stay accessible; hiding to the tray is unavailable.\n\n"
-            "Reminders still work. Left-click the pet for the Quit button, "
-            "or right-click it and choose Quit to exit completely.",
+            "Reminders still work. Right-click the pet and choose Quit to exit completely.",
             QMessageBox.StandardButton.Ok, self,
         )
-        self.tray_notice.open()
+        # Re-evaluate after Qt finishes hiding the notice; do not retain its
+        # paused state or override any other dialog that is still open.
+        self.tray_notice.finished.connect(lambda _result: QTimer.singleShot(0, self.idle.refresh))
+        # Informational only: keep the pet usable and blinking behind it.
+        self.tray_notice.setWindowModality(Qt.WindowModality.NonModal)
+        self.tray_notice.show()
 
     def hide_pet(self):
         if not QSystemTrayIcon.isSystemTrayAvailable():
@@ -296,23 +315,25 @@ class PetWindow(QWidget):
 
     def add_note(self):
         self.hide_interaction()
-        AddNoteDialog(self.store, self).exec()
+        AddNoteDialog(self.store, self,
+                      default_reminder_minutes=self.preferences.default_reminder_minutes).exec()
 
     def view_notes(self):
         self.hide_interaction()
-        NotesDialog(self.store, self).exec()
+        dialog = NotesDialog(self.store, self)
+        dialog.note_completed.connect(self.idle.completed)
+        dialog.exec()
+        self.idle.refresh()
 
     def show_interaction(self):
         self.bubble.show()
         self.note_actions.show()
-        self.quit_button.show()
         self.restart_idle_timer()
 
     def hide_interaction(self):
         self.bubble_timer.stop()
         self.bubble.hide()
         self.note_actions.hide()
-        self.quit_button.hide()
 
     def restart_idle_timer(self):
         if self.bubble.isVisible():
@@ -330,6 +351,7 @@ class PetWindow(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            self.end_drag()
             self.press_position = event.globalPosition().toPoint()
             self.window_start = self.pos()
             self.dragging = False
@@ -347,10 +369,15 @@ class PetWindow(QWidget):
             offset = event.globalPosition().toPoint() - self.press_position
             if not self.dragging and offset.manhattanLength() >= self.drag_threshold:
                 self.dragging = True
+                self.drag_activity.restart()
                 self.hide_interaction()
-                # Let the desktop manage dragging where supported (including Wayland).
+                self.idle.pause()
+                self.pet.stop_action()
+                # X11/WSL, Windows and macOS support direct movement, retaining
+                # mouse release delivery. Only Wayland requires compositor move.
                 handle = self.windowHandle()
-                self.system_drag = bool(handle and handle.startSystemMove())
+                self.system_drag = bool(QApplication.platformName().startswith('wayland')
+                                        and handle and handle.startSystemMove())
             if self.dragging and not self.system_drag:
                 self.move(self.window_start + offset)
             event.accept()
@@ -366,10 +393,33 @@ class PetWindow(QWidget):
             self.dragging = False
             self.system_drag = False
             if is_click:
-                self.show_interaction()
+                self.hide_interaction()
+                message = random.choice(GREETINGS)
+                if self.idle.start_wave():
+                    self.bubble.setText(message)
+                    self.show_interaction()
+            self.idle.refresh()
             event.accept()
         else:
             super().mouseReleaseEvent(event)
+
+    def end_drag(self):
+        self.press_position = None
+        self.dragging = False
+        self.system_drag = False
+
+    def recover_finished_drag(self):
+        # Native moves can consume the release event. Never let their bookkeeping
+        # permanently block idle. Wayland gets a settling grace after last move.
+        if self.dragging and not QApplication.mouseButtons() & Qt.MouseButton.LeftButton:
+            if not self.system_drag or self.drag_activity.elapsed() >= 600:
+                print('[pet] Drag release recovered; returning to idle', flush=True)
+                self.end_drag()
+
+    def moveEvent(self, event):
+        if self.system_drag:
+            self.drag_activity.restart()
+        super().moveEvent(event)
 
 
 def run():
@@ -383,6 +433,7 @@ def run():
         return 0
     window = PetWindow(preferences)
     window.show()
+    window.idle.start()
     return app.exec()
 
 

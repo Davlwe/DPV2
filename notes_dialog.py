@@ -2,16 +2,17 @@
 
 from datetime import datetime, timezone
 
-from PySide6.QtCore import QDateTime, Qt
+from PySide6.QtCore import QDateTime, Qt, Signal
 from PySide6.QtWidgets import (
     QDateTimeEdit, QDialog, QDialogButtonBox, QFormLayout, QLabel,
     QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit,
-    QPushButton, QVBoxLayout,
+    QPushButton, QVBoxLayout, QComboBox,
 )
+from reminders import REMINDER_CHOICES, DEFAULT_REMINDER_MINUTES, validate_reminder_minutes
 
 
 class AddNoteDialog(QDialog):
-    def __init__(self, store, parent=None):
+    def __init__(self, store, parent=None, default_reminder_minutes=DEFAULT_REMINDER_MINUTES):
         super().__init__(parent)
         self.store = store
         self.setWindowTitle("Add note — SuperDpet")
@@ -24,6 +25,11 @@ class AddNoteDialog(QDialog):
         self.due_input.setCalendarPopup(True)
         self.due_input.setDisplayFormat("yyyy-MM-dd HH:mm")
         layout.addRow("Due (local time):", self.due_input)
+        self.remind_me = QComboBox()
+        for minutes in REMINDER_CHOICES:
+            self.remind_me.addItem(f"{minutes} minute{'s' if minutes != 1 else ''} before", minutes)
+        self.remind_me.setCurrentIndex(self.remind_me.findData(validate_reminder_minutes(default_reminder_minutes)))
+        layout.addRow("Remind me:", self.remind_me)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
@@ -39,7 +45,7 @@ class AddNoteDialog(QDialog):
             return
         due = datetime.fromtimestamp(selected.toSecsSinceEpoch(), timezone.utc)
         try:
-            self.store.add(self.text_input.toPlainText(), due)
+            self.store.add(self.text_input.toPlainText(), due, self.remind_me.currentData())
         except (OSError, ValueError) as error:
             QMessageBox.warning(self, "Note not saved", str(error))
             return
@@ -47,6 +53,8 @@ class AddNoteDialog(QDialog):
 
 
 class NotesDialog(QDialog):
+    note_completed = Signal()
+
     def __init__(self, store, parent=None):
         super().__init__(parent)
         self.store = store
@@ -74,7 +82,8 @@ class NotesDialog(QDialog):
             due = datetime.fromisoformat(note["due_at"]).astimezone()
             state = "Complete" if note["completed"] else "Pending"
             item = QListWidgetItem(
-                f"{note['text']}\nDue: {due:%Y-%m-%d %H:%M %Z}  |  {state}"
+                f"{note['text']}\nDue: {due:%Y-%m-%d %H:%M %Z}  |  {state}\n"
+                f"Remind: {note.get('reminder_minutes', DEFAULT_REMINDER_MINUTES)} minute(s) before"
             )
             item.setData(Qt.ItemDataRole.UserRole, note["id"])
             self.list_widget.addItem(item)
@@ -97,3 +106,4 @@ class NotesDialog(QDialog):
             QMessageBox.warning(self, "Completion not saved", str(error))
             return
         self.refresh()
+        self.note_completed.emit()

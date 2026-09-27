@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from PySide6.QtCore import QIODevice, QSaveFile, QStandardPaths
+from reminders import DEFAULT_REMINDER_MINUTES, validate_reminder_minutes
 
 
 class NoteStore:
@@ -44,6 +45,8 @@ class NoteStore:
             note.setdefault("reminded", False)
             if type(note["reminded"]) is not bool:
                 raise ValueError("Invalid reminder state.")
+            note.setdefault("reminder_minutes", DEFAULT_REMINDER_MINUTES)
+            validate_reminder_minutes(note["reminder_minutes"])
             due = datetime.fromisoformat(note["due_at"])
             if due.tzinfo is None:
                 raise ValueError("Due time must include a time zone.")
@@ -66,7 +69,8 @@ class NoteStore:
         # Only update the visible state after saving succeeds.
         self.notes = notes
 
-    def add(self, text, due):
+    def add(self, text, due, reminder_minutes=DEFAULT_REMINDER_MINUTES):
+        validate_reminder_minutes(reminder_minutes)
         text = text.strip()
         if not text:
             raise ValueError("Please enter some note text.")
@@ -78,6 +82,7 @@ class NoteStore:
             "due_at": due.astimezone(timezone.utc).isoformat(),
             "completed": False,
             "reminded": False,
+            "reminder_minutes": reminder_minutes,
         }
         self._save(self.notes + [note])
 
