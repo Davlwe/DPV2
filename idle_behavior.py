@@ -1,5 +1,6 @@
-"""Standing idle: a still image with brief, randomized, interruptible blinks."""
+"""Pose-specific idle with brief, randomized, interruptible blinks."""
 
+import os
 import random
 import math
 from dataclasses import dataclass
@@ -23,7 +24,7 @@ class IdleSettings:
 
 
 IDLE = IdleSettings()
-BLINK_DIAGNOSTICS = True  # Temporary: set False to silence terminal diagnostics.
+BLINK_DIAGNOSTICS = os.environ.get('SUPERDPET_DEBUG') == '1'
 
 
 def blink_log(message):

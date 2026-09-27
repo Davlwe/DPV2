@@ -75,8 +75,7 @@ def check_remaining_features():
         notes.note_completed.connect(window.idle.completed)
         notes.setModal(True)
         notes.show()
-        notes.list_widget.setCurrentRow(0)
-        notes.complete_selected()
+        notes.rows[store.notes[0]['id']].checkbox.click()
         assert store.notes[0]['completed']
         notes.close()
         app.processEvents()

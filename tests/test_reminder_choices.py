@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication, QPushButton, QMessageBox
 
 import main
 from notes_dialog import AddNoteDialog, NotesDialog
@@ -41,38 +41,79 @@ class ReminderChoiceTests(unittest.TestCase):
         reloaded = NoteStore(self.store.path)
         self.assertEqual([n['reminder_minutes'] for n in reloaded.notes], [1, 5, 10])
 
-    def test_delete_completed_selection_persists_and_protects_pending(self):
-        self.store.add('pending', self.now, 1)
-        self.store.add('finished', self.now, 10)
-        self.store.complete(self.store.notes[1]['id'])
-        pending = dict(self.store.notes[0])
-        dialog = NotesDialog(self.store)
-        self.addCleanup(dialog.close)
-        self.assertFalse(dialog.delete_button.isEnabled())
-        dialog.list_widget.setCurrentRow(0)
-        self.assertFalse(dialog.delete_button.isEnabled())
-        self.store.delete_completed(pending['id'])
-        self.assertEqual(len(self.store.notes), 2)
-        dialog.list_widget.setCurrentRow(1)
-        self.assertTrue(dialog.delete_button.isEnabled())
-        dialog.delete_button.click()
-        self.assertEqual(self.store.notes, [pending])
-        self.assertEqual(NoteStore(self.store.path).notes, [pending])
-        self.assertEqual(dialog.list_widget.count(), 1)
+    def test_row_delete_confirmation_persistence_and_reminder_cancellation(self):
+        for completed in (False, True):
+            with self.subTest(completed=completed):
+                self.store.add('delete me', self.now, 1)
+                note_id = self.store.notes[-1]['id']
+                self.store.set_completed(note_id, completed)
+                dialog = NotesDialog(self.store)
+                self.addCleanup(dialog.close)
+                with patch('notes_dialog.QMessageBox.exec', return_value=QMessageBox.StandardButton.No):
+                    dialog.rows[note_id].delete_button.click()
+                self.assertIn(note_id, dialog.rows)
+                with patch('notes_dialog.QMessageBox.exec', return_value=QMessageBox.StandardButton.Yes):
+                    dialog.rows[note_id].delete_button.click()
+                self.assertNotIn(note_id, dialog.rows)
+                self.assertEqual(NoteStore(self.store.path).notes, [])
+                self.assertEqual(pending_reminders(self.store.notes, self.now), [])
 
     def test_failed_delete_keeps_note_and_reports_error(self):
-        self.store.add('finished', self.now)
-        self.store.complete(self.store.notes[0]['id'])
+        self.store.add('keep me', self.now)
+        original = self.store.path.read_bytes()
+        note_id = self.store.notes[0]['id']
+        dialog = NotesDialog(self.store)
+        self.addCleanup(dialog.close)
+        with patch.object(self.store, '_save', side_effect=OSError('disk error')), \
+                patch('notes_dialog.QMessageBox.exec', return_value=QMessageBox.StandardButton.Yes), \
+                patch('notes_dialog.QMessageBox.warning') as warning:
+            dialog.rows[note_id].delete_button.click()
+        warning.assert_called_once()
+        self.assertIn(note_id, dialog.rows)
+        self.assertEqual(self.store.path.read_bytes(), original)
+
+    def test_checkbox_roundtrip_preserves_fields_and_reminder_history(self):
+        self.store.add('<b>Literal task</b>', self.now, 10)
+        original = dict(self.store.notes[0])
+        note_id = original['id']
+        dialog = NotesDialog(self.store)
+        self.addCleanup(dialog.close)
+        completed = Mock()
+        dialog.note_completed.connect(completed)
+        row = dialog.rows[note_id]
+        row.checkbox.click()
+        self.assertEqual(NoteStore(self.store.path).notes, [dict(original, completed=True)])
+        self.assertTrue(row.title.font().strikeOut())
+        self.assertEqual(pending_reminders(self.store.notes, self.now), [])
+        row.checkbox.click()
+        self.assertEqual(NoteStore(self.store.path).notes, [original])
+        self.assertFalse(row.title.font().strikeOut())
+        self.assertEqual(pending_reminders(self.store.notes, self.now), [original])
+        completed.assert_called_once()
+        self.store.mark_reminded({note_id})
+        row.checkbox.click()
+        row.checkbox.click()
+        self.assertTrue(NoteStore(self.store.path).notes[0]['reminded'])
+        self.assertEqual(pending_reminders(self.store.notes, self.now), [])
+        # External storage changes synchronize the existing card too.
+        self.store.set_completed(note_id, True)
+        self.assertTrue(row.checkbox.isChecked())
+
+    def test_checkbox_save_failure_restores_ui_and_does_not_celebrate(self):
+        self.store.add('unchanged', self.now)
         original = self.store.path.read_bytes()
         dialog = NotesDialog(self.store)
         self.addCleanup(dialog.close)
-        dialog.list_widget.setCurrentRow(0)
+        completed = Mock()
+        dialog.note_completed.connect(completed)
+        row = dialog.rows[self.store.notes[0]['id']]
         with patch.object(self.store, '_save', side_effect=OSError('disk error')), \
                 patch('notes_dialog.QMessageBox.warning') as warning:
-            dialog.delete_button.click()
+            row.checkbox.click()
         warning.assert_called_once()
-        self.assertEqual(len(self.store.notes), 1)
-        self.assertEqual(dialog.list_widget.count(), 1)
+        completed.assert_not_called()
+        self.assertFalse(row.checkbox.isChecked())
+        self.assertFalse(row.title.font().strikeOut())
         self.assertEqual(self.store.path.read_bytes(), original)
 
     def test_legacy_migration_does_not_write_until_next_save_or_lose_fields(self):

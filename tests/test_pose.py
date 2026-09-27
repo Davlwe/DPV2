@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -85,6 +86,22 @@ class PoseTests(unittest.TestCase):
         self.assertEqual(w.pet.pixmap().cacheKey(), w.pose_frames['standing'][0].cacheKey())
         w.idle.start_blink()
         self.assertEqual(w.pet.pixmap().cacheKey(), w.pose_frames['standing'][1].cacheKey())
+
+    def test_developer_reminder_requires_explicit_opt_in(self):
+        for value in ('', '0', 'true', '1'):
+            with self.subTest(value=value), patch.dict(os.environ, SUPERDPET_DEV_MODE=value):
+                w = self.window()
+                actions = [a for a in w.settings_menu.actions()
+                           if a.text().startswith('Developer test:')]
+                self.assertEqual(len(actions), 1 if value == '1' else 0)
+                before = len(self.store.notes)
+                if actions:
+                    actions[0].trigger()
+                    self.assertEqual(len(self.store.notes), before + 1)
+                    self.assertTrue(self.store.notes[-1]['text'].startswith('[DEVELOPER TEST]'))
+                else:
+                    w.create_test_reminder()
+                    self.assertEqual(len(self.store.notes), before)
 
     def test_preferences_preserve_other_settings_and_handle_legacy(self):
         self.prefs.save_pose('sitting')

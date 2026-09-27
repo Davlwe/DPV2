@@ -1,135 +1,254 @@
 # SuperDpet
 
-Run from this checkout:
+SuperDpet is a local desktop companion that pairs an animated character with notes,
+due-time reminders, and a task-aware mood. This GIBC V2 **Track 3** submission
+explores a friendly desktop interface for everyday task management.
+
+## Features
+
+- Standing and sitting poses, saved between launches.
+- A matching wave for each pose, randomized greetings, and automatic blinking.
+- Dragging to reposition the pet without triggering a greeting.
+- Add Note and View Notes, per-task completion checkboxes, and confirmed deletion.
+- Reminders 1, 5, or 10 minutes before a note's due time.
+- Mood colors based on pending, overdue, and completed tasks.
+- Right-click settings, optional startup at sign-in, tray controls where available,
+  and an explicit Quit action.
+
+The app runs locally. It does not need an API key, an AI service, or an internet
+connection during normal use. Installing dependencies requires package access.
+
+## Setup and launch
+
+Use **Python 3.14** for the demonstrated setup (tested with Python 3.14.4).
+Other Python versions have not been verified for this submission. A graphical
+desktop is required. The pinned dependencies are PySide6 6.11.2 for the app and
+Pillow 12.3.0 for asset preparation and image tests; pytest is not required.
+
+Clone or download this repository, then open a terminal in its root directory
+(the directory containing `main.py`). All commands below run from that directory.
+
+### Linux / WSL
+
+Ensure Python 3.14 and its `venv` support are installed. On WSL, a working GUI
+display such as WSLg is also required.
 
 ```bash
+python3.14 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python main.py
 ```
 
-On native Windows, use `.venv\Scripts\python.exe main.py` with a Windows Python
-environment containing PySide6.
+### macOS
 
-The pet blinks in either pose every 2–5 seconds, closing its eyes for 120–180ms after
-the closed-eye frame has actually painted. Controls and menus do not suspend
-blinking. Dragging, modal dialogs, active reminders, and waving do; a fresh
-random delay starts afterward. The tray-unavailable notice is non-modal.
-Short left-clicks immediately show the buttons and one random greeting while a
-closed-eye wave plays for 950ms:
-“Hi, how can I help you today?” or “Wanna add a note or reminder?” The only
-left-click buttons are Add Note and View Notes. Quit remains in the right-click
-and tray menus. Repeated clicks restart one wave timer; dragging cancels the
-wave and hides the greeting and buttons.
-Reminders use an orange glow
-and alert motion. Completing a note queues a happy bounce with sparkles after
-the notes dialog closes. Normal idle never moves the desktop window.
+Install Python 3.14 and run the same commands as Linux from a graphical desktop
+session. Native macOS GUI and sign-in behavior still need platform testing.
 
-Blink and action timings are in `IdleSettings` in `idle_behavior.py`. Temporary
-timestamped diagnostics are controlled by `BLINK_DIAGNOSTICS` in that file.
-The standing, standing-blink, and standing-wave 1024px frames are loaded relative
-to `main.py`; no source assets are rewritten. Normal idle uses neither the older
-poster-like full-body image nor the original bust sprites.
-Missing images produce terminal errors and retain a visible fallback.
+### Windows (PowerShell)
 
-Right-click **Sit down** or **Stand up** to change the idle pose. Standing is
-the default when no pose preference exists. The selected pose is saved in
-`preferences.json` and restored on restart; changing startup or reminder settings
-preserves it. A failed save leaves the visible pose unchanged. Sitting uses the
-existing transparent seated open-eye and blink sprites on the same fixed canvas
-and ground anchor as standing. A short click uses that pose's wave sprite, then
-returns to its open-eye sprite and resumes its blinking. The seated wave keeps
-the folded legs, raises one hand, and gently closes the eyes throughout the wave.
-Only the right-click pose action changes the selected pose or saved preference.
-Dragging cancels the wave and never starts a greeting. If seated assets cannot
-be loaded, the app uses standing and disables the pose menu item.
+Install native Windows Python 3.14, then run:
 
-## Task mood
-
-The pet has a quiet, steady glow: blue **Calm** when no tasks are pending,
-turquoise **Focused** when pending tasks are not overdue, and rose **Concerned**
-when any pending task reaches its due time. Completed notes never count as overdue.
-Finishing the last pending task turns the glow gold **Happy**, keeping the existing
-brief completion celebration. Happy lasts until a new pending task is added or
-all completed notes are deleted. Restarting with only completed notes starts Calm.
-Hover over the pet or tray icon to see the mood and pending/completed/overdue counts
-(overdue tasks are included in pending). Updates happen after successful note saves
-and every second to detect due times. Mood does not open messages or steal focus;
-orange reminder alerts take priority, then restore the current mood glow.
-
-## Reminder choices
-
-Add Note has a “Remind me” choice: 1, 5, or 10 minutes before the due time.
-Settings saves the default for future notes (initially 5 minutes), including on
-WSL where startup registration is unavailable. Changing this default does not
-change existing notes; each Add Note form can override it.
-
-Each note stores `reminder_minutes` in `notes.json`. The trigger is its due time
-minus that number of minutes. Legacy notes without the field receive 5 minutes
-when loaded, and the migrated field is persisted on the next successful write.
-Completed/already-reminded notes remain excluded; overdue unshown reminders are
-caught up after restart. The global default lives in `preferences.json` alongside
-startup consent. The developer 5-second test uses the chosen default as its lead.
-
-For an additional visible desktop check (not offscreen), run:
-
-```bash
-.venv/bin/python tests/native_interaction_check.py
+```powershell
+py -3.14 -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe main.py
 ```
 
-It opens a temporary pet, checks painted blink/wave transitions and interactions,
-uses temporary note storage, saves three pet-only captures in `assets/diagnostics/`,
-then closes. Native compositor drag and menu gestures should also be checked
-manually, since synthetic mouse events may not receive Wayland input grabs.
-Pass `--no-captures` to run without writing any images.
+These commands use the virtual environment directly; activation is optional.
+Create the environment on the machine you will use rather than copying `.venv`
+from another operating system. There is no packaged installer in this repository.
 
-## Optional startup (Milestone 6)
+## Walkthrough
 
-On a supported native desktop, the first launch asks about startup. It is off by
-default. Check **Start SuperDpet when I sign in** and click **Save** to consent
-and register it. **No thanks**, Escape, or closing that initial dialog saves a
-decline, so the app does not ask again. Startup registration never happens just
-from opening the app or Settings.
+1. **Click:** short left-click the pet to see a wave, a randomly selected greeting,
+   and **Add Note** / **View Notes**. The controls hide after about four seconds
+   of inactivity. Clicking again restarts the greeting and wave.
+2. **Drag:** hold the left button and move the pet. Dragging hides the controls
+   and cancels a wave; releasing a drag does not trigger another wave.
+3. **Change pose:** right-click and choose **Sit down** or **Stand up**. Standing
+   is the initial default. Sitting clicks remain seated throughout their wave.
+   The saved pose returns after restarting; waving does not change it.
+4. **Add a note:** enter text, choose a local due date/time, and select a reminder.
+   **1, 5, and 10 minutes mean minutes before the due time**, not minutes from now.
+   For example, a 10:00 due time with a 5-minute reminder alerts at 09:55.
+5. **View notes:** each task has a card with its text, local due time, and reminder
+   lead time. Check the box on the right to complete it; uncheck to mark it pending
+   again. Completed titles are dimmed and struck through. The adjacent **×** button
+   deletes that task after confirmation, including any future reminder. Changes
+   save immediately. Editing task text and due times is not currently offered.
+6. **Reminders:** an orange glow and a separate reminder window announce matching
+   notes. Dismiss the reminder to resume normal greetings and blinking. The app
+   must remain running for reminders; Quit stops them. On relaunch, unshown
+   reminders whose trigger time has passed are caught up once. Completed or
+   already-reminded notes do not trigger again.
+   Unchecking a task preserves its reminder history: an already-shown reminder
+   will not repeat, while an unshown reminder follows the original due time.
+7. **Settings and exit:** right-click **Settings** to set the default reminder for
+   future notes and manage startup where supported. **Quit** exits completely.
+   When a tray is available, **Hide Pet** leaves reminder checks running and
+   **Show Pet** restores the pet.
 
-Right-click the pet and choose **Settings**, or use **Settings** in the tray
-menu, to change your choice. Uncheck the option and save to remove registration.
-The preference is saved separately from notes in `preferences.json` in Qt's
-application data directory. Errors are reported; unreadable preferences are
-preserved and startup changes are disabled until the file is repaired.
+Both poses blink at randomized intervals of 2–5 seconds. Dragging, waving, modal
+forms, and active reminders pause blinking; it resumes afterward. Ordinary
+menus and the informational tray notice do not suspend blinking.
 
-Registration applies to the current user's next desktop sign-in, using these
-platform mechanisms:
+### Mood
 
-- Windows: the `SuperDpet` value in
-  `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`.
-  See Microsoft's [Run key documentation](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys).
-- Linux: `io.superdpet.SuperDpet.desktop` in `$XDG_CONFIG_HOME/autostart`, or
-  `~/.config/autostart` by default. The desktop must support
-  [XDG autostart](https://specifications.freedesktop.org/autostart/latest/).
-- macOS: `~/Library/LaunchAgents/io.superdpet.SuperDpet.plist`, a per-user
-  [launch agent](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html)
-  that runs at login without restarting after Quit.
+| Mood | Color | Meaning |
+|---|---|---|
+| Calm | Blue | No pending tasks, without an active completion mood |
+| Focused | Turquoise | Pending tasks, none overdue |
+| Concerned | Rose | At least one pending task has reached its due time |
+| Happy | Gold | The last pending task was completed during this session |
 
-This source checkout registers its current Python interpreter and `main.py`
-using absolute paths. Keep both in place. If you move the app or replace its
-environment, launch it manually from the new location and save the setting again.
-The OS can independently restrict login/background items.
+Hover over the pet or tray icon for counts and the mood name. Overdue counts are
+included in pending counts. Completing a task also produces a brief celebration.
+Happy persists until a new pending task is added or all completed notes are
+removed; restarting with only completed notes begins Calm. Orange reminder glow
+has priority over the task mood and restores the current mood after dismissal.
 
-**WSL:** automatic startup is unsupported and the Settings checkbox is disabled
-with an explanation. No Windows or Linux startup entry is created from WSL.
-Manual launch, notes, reminders, and the tray fallback continue to work.
+## Local data and startup
 
-**Hide Pet** leaves the app and reminder checks running. **Quit** stops both for
-the current session; if startup is enabled, the app can open at the next sign-in.
-Turn the option off in Settings to prevent that. Startup entries use `--startup`,
-which exits without showing the pet unless saved permission is explicitly true.
+Notes are stored in `notes.json`; pose, reminder defaults, and startup consent are
+stored separately in `preferences.json`. Both use Qt's application data location,
+not the checkout. Typical locations are:
 
-## Verification
+| Platform | Approximate directory |
+|---|---|
+| Linux / WSL | `~/.local/share/SuperDpet/` (or under `XDG_DATA_HOME`) |
+| Windows | `%APPDATA%\SuperDpet\` |
+| macOS | `~/Library/Application Support/SuperDpet/` |
+
+Locations can vary with OS configuration. Files contain local, unencrypted JSON;
+there is no cloud synchronization. Do not upload personal data files. Quit the
+app before backing up or restoring them. Unreadable data is left untouched and
+saving is disabled rather than replacing it with an empty file.
+
+Startup is optional and off by default. On supported desktops, the first launch
+asks for consent. **No thanks** declines; Settings can change the choice later.
+Registration uses the current user's Windows Run entry, Linux XDG autostart
+entry, or macOS LaunchAgent. It points to this checkout and its Python interpreter.
+If either moves, launch manually and save the setting again. Disable startup
+before removing the checkout. Quit stops the current session; it does not revoke
+permission for the next sign-in.
+
+## Platform limitations
+
+- **Test coverage:** automated tests and visible Wayland checks were run in the
+  development environment. Native Windows/macOS GUI and actual sign-in behavior
+  are not yet verified. Mocked OS-registration tests are not native sign-in tests.
+- **Tray:** some desktops do not provide a system tray. The app displays an
+  informational notice and stays accessible; hiding to the tray is unavailable.
+- **WSL:** GUI use needs a working display. Startup registration is intentionally
+  disabled; the Linux app does not register a Windows sign-in application.
+- **Wayland:** the compositor controls window placement and native dragging.
+  Synthetic input can produce popup-grab warnings; physical menu and drag
+  gestures should also be checked on the intended demo machine.
+- **Qt/display setup:** a headless shell cannot show the pet. Linux may require
+  distribution-specific Qt display libraries. A platform-plugin error should be
+  resolved for the desktop environment rather than using offscreen mode to demo.
+- **Window behavior:** the pet is not always-on-top and may be covered by other
+  windows. Position is not persisted across restarts. The tray uses a small
+  blue-and-white pet-face icon; native tray menus may follow the OS styling.
+- **One instance at a time:** there is no instance lock or concurrent data merge.
+  Running multiple pets against the same data can overwrite updates.
+- **Timing:** reminders are checked while the app runs and can be delayed during
+  sleep or suspension. They are not an operating-system alarm service.
+
+## Development and verification
+
+### Automated tests
+
+Install `requirements.txt` first. Tests use Python's built-in `unittest`, temporary
+note/preferences storage, and mocked startup registration.
+
+Linux/macOS/WSL:
 
 ```bash
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v
 ```
 
-Tests use temporary paths and a mocked Windows registry, leaving real startup
-settings untouched. Native sign-in behavior still requires testing on each OS.
-On WSL, open Settings to check the explanation and disabled checkbox, then test
-the reminder and Quit controls. On a native desktop, test declining and
-restarting, enabling and signing in again, and disabling and signing in again.
+Windows PowerShell:
+
+```powershell
+$env:QT_QPA_PLATFORM = "offscreen"
+.venv\Scripts\python.exe -m unittest discover -s tests -v
+Remove-Item Env:QT_QPA_PLATFORM
+```
+
+Offscreen tests cannot prove compositor behavior. From a graphical session,
+without `QT_QPA_PLATFORM=offscreen`, run the visible checks one at a time:
+
+```bash
+.venv/bin/python tests/native_interaction_check.py --no-captures
+.venv/bin/python tests/native_pose_check.py
+```
+
+On Windows, substitute `.venv\Scripts\python.exe`. The native pose check currently
+uses a machine-specific temporary capture path that may require adaptation on
+Windows; it is not an application runtime requirement. Native tests use temporary
+data, simulate input, and close their test pet. Avoid interacting with the test
+window while they run. Manually verify both pose-specific waves, resumed blinking,
+seated dragging, menu switching, notes, reminder timing, tray fallback, and Quit.
+Verify startup through actual sign-out/sign-in on each target native platform.
+
+Without `--no-captures`, the interaction check writes generated screenshots under
+`assets/diagnostics/`, which is ignored by Git. Capture outputs are not required
+to run the app. Timing and animation guards live in `idle_behavior.py`.
+
+### Developer mode and diagnostics
+
+Both switches are **off by default** and enabled only by the exact value `1`.
+Normal launches do not expose the developer reminder action.
+
+```bash
+SUPERDPET_DEV_MODE=1 .venv/bin/python main.py
+SUPERDPET_DEBUG=1 .venv/bin/python main.py
+```
+
+`SUPERDPET_DEV_MODE` exposes **Developer test: create reminder in 5 seconds** in
+the right-click menu. Selecting it creates a real, persistent `[DEVELOPER TEST]`
+note using the current reminder lead time. Use separate test data or complete
+and delete test notes before a demo; switching developer mode off does not delete
+existing notes. The automated tests use isolated data instead.
+
+`SUPERDPET_DEBUG` enables routine blink, paint, sprite, and drag diagnostics.
+Actionable asset errors and storage error messages remain available without it.
+The switches are independent and should be unset for the public demo.
+
+In PowerShell, set `$env:SUPERDPET_DEV_MODE = "1"` or
+`$env:SUPERDPET_DEBUG = "1"`, launch with `.venv\Scripts\python.exe main.py`, then
+remove the chosen variable with `Remove-Item Env:SUPERDPET_DEV_MODE` or
+`Remove-Item Env:SUPERDPET_DEBUG` before normal use.
+
+## AI assistance and asset provenance
+
+UI icons are drawn locally with Qt using rounded blue-to-white badges and dark
+blue symbols. They scale to the requested size without an additional dependency.
+Buttons retain text labels, with hover, pressed, focus, and disabled treatments.
+The pet character artwork is separate from these UI icons.
+
+Development was assisted by **OpenAI Codex**, including implementation, debugging,
+tests, and documentation. The runtime uses local Python/Qt logic; greetings are
+selected from predefined text and moods are derived from task counts.
+
+The original character reference is retained as `assets/reference.png`. Character
+sprites and animation variants were created with AI image-generation/editing
+assistance based on that reference, with local image preparation and resizing.
+Available generation prompts and export notes are preserved in `assets/*prompt*.txt`.
+Those files record the available provenance, not a complete reproduction pipeline
+for every asset, and do not establish ownership of the original reference.
+
+Runtime uses the six 1024px standing/sitting open-eye, blink, and wave sprites.
+The current 256px variants, reference image, and prompt files are retained.
+Unused legacy idle/full-body/blink exports have been removed. Preserved prompts
+may name those historical exports; they are not required by the running app.
+`scripts/prepare_superdpet.py` is a legacy reference-preparation utility that
+writes the older idle sprites; it is not needed for setup and does not generate
+the current animation set.
+
+## License
+
+No license has been selected yet. This repository does not currently grant an
+open-source license for its code or artwork. Code licensing and rights to the
+reference and generated assets must be clarified before reuse or redistribution.

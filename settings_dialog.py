@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QLabel, QMessageBox, QVBoxLayout, QComboBox,
 )
 from reminders import REMINDER_CHOICES
+from ui_icons import icon, style_button_box
 
 
 class SettingsDialog(QDialog):
@@ -13,6 +14,7 @@ class SettingsDialog(QDialog):
         self.startup = startup
         self.first_run = first_run
         self.setWindowTitle("Startup permission — SuperDpet" if first_run else "Settings — SuperDpet")
+        self.setWindowIcon(icon('settings'))
         self.resize(450, 240)
         layout = QVBoxLayout(self)
         explanation = QLabel(
@@ -39,6 +41,7 @@ class SettingsDialog(QDialog):
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
         self.buttons.accepted.connect(self.save)
+        style_button_box(self.buttons)
         self.buttons.rejected.connect(self.reject)
         if first_run:
             self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("No thanks")

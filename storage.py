@@ -91,10 +91,20 @@ class NoteStore(QObject):
         self._save(self.notes + [note])
 
     def complete(self, note_id):
+        self.set_completed(note_id, True)
+
+    def set_completed(self, note_id, completed):
+        """Change task status without rearming an already shown reminder."""
+        if type(completed) is not bool:
+            raise ValueError("Completion state must be true or false.")
         self._save([
-            dict(note, completed=True) if note["id"] == note_id else note
+            dict(note, completed=completed) if note["id"] == note_id else note
             for note in self.notes
         ])
+
+    def delete(self, note_id):
+        """Remove a task; reminder checks only consider remaining records."""
+        self._save([note for note in self.notes if note["id"] != note_id])
 
     def mark_reminded(self, note_ids):
         self._save([
