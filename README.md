@@ -6,18 +6,10 @@ explores a friendly desktop interface for everyday task management.
 
 ## Features
 
-- Standing and sitting poses, saved between launches.
-- A matching wave for each pose, randomized greetings, and automatic blinking.
-- Sleeping after 30 seconds without app interaction, with gentle breathing and rising Zzz.
-- Dragging to reposition the pet without triggering a greeting.
-- Add Note and View Notes, per-task completion checkboxes, and confirmed deletion.
-- Reminders 1, 5, or 10 minutes before a note's due time.
-- Mood colors based on pending, overdue, and completed tasks.
-- Right-click settings, optional startup at sign-in, tray controls where available,
-  and an explicit Quit action.
+- Left click to add notes or view notes
+- Pet actions such as sleeping sitting and standing
 
-The app runs locally. It does not need an API key, an AI service, or an internet
-connection during normal use. Installing dependencies requires package access.
+The app runs locally, no API no nothing needed.
 
 ## Setup and launch
 
