@@ -83,6 +83,12 @@ class BlueIconEngine(QIconEngine):
             else:
                 for y in (9, 12, 15):
                     line(10, y, 14, y)
+        elif name == 'sleep':
+            moon = QPainterPath(QPointF(14, 6))
+            moon.cubicTo(3, 5, 4, 20, 15, 18)
+            moon.quadTo(18, 17, 18, 14)
+            moon.cubicTo(11, 17, 9, 9, 14, 6)
+            painter.drawPath(moon)
         elif name == 'settings':
             for x, y in ((8, 9), (12, 15), (16, 10)):
                 line(x, 6, x, 18)

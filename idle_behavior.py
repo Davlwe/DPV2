@@ -9,6 +9,7 @@ from datetime import datetime
 from PySide6.QtCore import QEvent, QObject, QRectF, QTimer, Qt, Property, QPropertyAnimation, QEasingCurve, Signal
 from PySide6.QtGui import QPainter, QColor, QPen
 from PySide6.QtWidgets import QApplication, QDialog, QLabel, QMenu
+from sleep_behavior import PetState
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,7 @@ class PetSprite(QLabel):
         self.open_frame = None
         self.blink_frame = None
         self.wave_frame = None
+        self.sleep_frame = None
         self.frame_name = "open"
         self.frame_revision = 0
         self._painted_revision = -1
@@ -67,8 +69,9 @@ class PetSprite(QLabel):
         self.stop_action()
         self.action_kind = kind
         self.action_animation.setDuration({'wave': IDLE.wave_ms, 'happy': IDLE.happy_ms,
-                                           'alert': IDLE.alert_ms, 'pose': IDLE.pose_ms}[kind])
-        self.action_animation.setLoopCount(-1 if kind == 'alert' else 1)
+                                           'alert': IDLE.alert_ms, 'pose': IDLE.pose_ms,
+                                           'sleep': 3600}[kind])
+        self.action_animation.setLoopCount(-1 if kind in ('alert', 'sleep') else 1)
         self.action_animation.start()
         blink_log(f'ACTION {kind}')
 
@@ -94,10 +97,11 @@ class PetSprite(QLabel):
         blink_log("SPRITE open-eye applied (initial)")
 
     def show_frame(self, name):
-        frames = {'open': self.open_frame, 'blink': self.blink_frame, 'wave': self.wave_frame}
+        frames = {'open': self.open_frame, 'blink': self.blink_frame,
+                  'wave': self.wave_frame, 'sleep': self.sleep_frame}
         frame = frames[name]
         if frame is None:
-            frame = self.blink_frame if name == 'wave' and self.blink_frame is not None else self.open_frame
+            frame = self.blink_frame if name in ('wave', 'sleep') and self.blink_frame is not None else self.open_frame
         self.frame_name = name
         self.blinking = name == 'blink' and self.blink_frame is not None
         self.frame_revision += 1
@@ -122,8 +126,20 @@ class PetSprite(QLabel):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         side = min(256, self.width(), self.height())
         image_rect = QRectF((self.width() - side) / 2, (self.height() - side) / 2, side, side)
+        if self.action_kind == 'sleep':
+            # Smaller sleeping silhouette; preserve the sprite's ground anchor.
+            scale = .80
+            image_rect = QRectF(image_rect.left() + side * (1 - scale) / 2,
+                                image_rect.top() + side * (978 / 1024) * (1 - scale),
+                                side * scale, side * scale)
         pulse = math.sin(math.pi * self._action_phase) ** 2
-        if self.action_kind == 'wave':
+        painter.save()
+        if self.action_kind == 'sleep':
+            # Gentle expansion anchored at the ground, one breath per 3.6 s.
+            painter.translate(image_rect.center().x(), image_rect.bottom())
+            painter.scale(1 + .004 * pulse, 1 + .025 * pulse)
+            painter.translate(-image_rect.center().x(), -image_rect.bottom())
+        elif self.action_kind == 'wave':
             # Brief greeting motion only; standing idle stays completely still.
             painter.translate(image_rect.center().x(), image_rect.bottom())
             painter.rotate(0.8 * math.sin(4 * math.pi * self._action_phase) * pulse)
@@ -132,6 +148,26 @@ class PetSprite(QLabel):
             painter.translate(0, -pulse * (3 if self.action_kind == 'pose' else
                                           5 if self.action_kind == 'alert' else 10))
         painter.drawPixmap(image_rect, pixmap, QRectF(pixmap.rect()))
+        painter.restore()
+        if self.action_kind == 'sleep':
+            for index in range(3):
+                phase = (self._action_phase + index / 3) % 1
+                color = QColor('#BCEAFF')
+                color.setAlpha(round(220 * math.sin(math.pi * phase)))
+                painter.setPen(color)
+                font = painter.font()
+                font.setPixelSize(round(13 + phase * 5))
+                font.setBold(True)
+                painter.setFont(font)
+                bounds = QRectF(image_rect.left() + image_rect.width() * 100 / 256 + phase * 16,
+                                image_rect.top() + image_rect.height() * 140 / 256 - phase * 65, 45, 26)
+                symbol = 'Z' if index == 0 else 'z'
+                shadow = QColor('#537DA8')
+                shadow.setAlpha(round(170 * math.sin(math.pi * phase)))
+                painter.setPen(shadow)
+                painter.drawText(bounds.translated(1, 1), Qt.AlignmentFlag.AlignCenter, symbol)
+                painter.setPen(color)
+                painter.drawText(bounds, Qt.AlignmentFlag.AlignCenter, symbol)
         if self.action_kind in ('happy', 'alert'):
             color = QColor('#FFB347' if self.action_kind == 'alert' else '#51DCCA')
             color.setAlpha(round(220 * pulse))
@@ -229,6 +265,8 @@ class IdleController(QObject):
             return
         self.cancel_transient()
         self.state = 'paused'
+        if self.window.sleep.state == PetState.WAVING:
+            self.window.sleep.transition(self.window.sleep.resting_state())
 
     def schedule_blink(self):
         if not self.started or self.stopped:
@@ -244,6 +282,9 @@ class IdleController(QObject):
             return
         w = self.window
         w.recover_finished_drag()
+        w.sleep.refresh()
+        if w.sleep.sleeping:
+            return
         self.blocked()  # Report changed conditions, never accumulate stale flags.
         if self.external_reasons():
             self.pause()
@@ -252,7 +293,7 @@ class IdleController(QObject):
             elif w.reminder_active and w.pet.action_kind != 'alert':
                 w.pet.play_action('alert')
             return
-        if self.state == 'waving':
+        if self.state == 'waving' or self.window.sleep.sleeping:
             return
         if self.happy_pending:
             self.happy_pending = False
@@ -268,7 +309,7 @@ class IdleController(QObject):
         if self.stopped or not self.started:
             return
         # A stale callback must never overwrite the waving frame.
-        if self.state == 'waving':
+        if self.state == 'waving' or self.window.sleep.sleeping:
             return
         if self.external_reasons():
             self.refresh()
@@ -294,10 +335,12 @@ class IdleController(QObject):
             blink_log(f'WAVE visible; restore in {self.settings.wave_ms}ms')
 
     def start_wave(self):
+        self.window.sleep.activity()
         if self.stopped or not self.started or self.external_reasons():
             return False
         self.cancel_transient()
         self.state = 'waving'
+        self.window.sleep.transition(PetState.WAVING)
         self.presentation_timer.start(self.settings.presentation_timeout_ms)
         self.window.pet.show_frame('wave')
         self.window.pet.play_action('wave')
@@ -312,7 +355,7 @@ class IdleController(QObject):
         self.refresh()
 
     def finish_blink(self):
-        if self.stopped or self.state == 'waving':
+        if self.stopped or self.state == 'waving' or self.window.sleep.sleeping:
             return
         blink_log('BLINK complete -> selected pose idle')
         self.pause()
@@ -321,6 +364,8 @@ class IdleController(QObject):
     def presentation_expired(self):
         # A hidden/occluded compositor surface might not paint. Never get stuck.
         blink_log('Frame presentation timeout; restoring idle and retrying later')
+        if self.window.sleep.sleeping:
+            return
         self.pause()
         self.refresh()
 

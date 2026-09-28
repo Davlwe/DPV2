@@ -8,6 +8,7 @@ explores a friendly desktop interface for everyday task management.
 
 - Standing and sitting poses, saved between launches.
 - A matching wave for each pose, randomized greetings, and automatic blinking.
+- Sleeping after 30 seconds without app interaction, with gentle breathing and rising Zzz.
 - Dragging to reposition the pet without triggering a greeting.
 - Add Note and View Notes, per-task completion checkboxes, and confirmed deletion.
 - Reminders 1, 5, or 10 minutes before a note's due time.
@@ -91,6 +92,32 @@ from another operating system. There is no packaged installer in this repository
 Both poses blink at randomized intervals of 2–5 seconds. Dragging, waving, modal
 forms, and active reminders pause blinking; it resumes afterward. Ordinary
 menus and the informational tray notice do not suspend blinking.
+
+After 30 seconds without clicks, dragging, menu actions, or note/settings/reminder
+interaction, the pet lies down to sleep. The countdown begins when the pet is
+shown. Hovering and activity elsewhere on the computer do not reset it; there
+is no global input tracking. Visible menus, dialogs (including the tray notice),
+reminders, dragging, a held mouse press, hidden/minimized state, and developer
+mode prevent sleeping. Closing these starts a fresh countdown.
+
+Sleeping uses a transparent lying sprite, a gentle 3.6-second breathing cycle,
+and three rising, fading blue Z symbols. The sleeping sprite renders 20% smaller
+while keeping its ground anchor. Right-click **Sleep** to sleep immediately once
+the menu closes (the same dialog, reminder, and developer-mode blockers apply).
+Left-click wakes and waves in the saved
+standing/sitting pose; dragging moves the pet while it keeps sleeping and breathing;
+right-click wakes and opens
+the menu. Notes, settings, and reminders also wake the pet. Blinking pauses while
+asleep and resumes after waking. If the sleeping asset is missing, the existing
+pose's closed-eye frame with breathing and Zzz is the explicit fallback.
+
+`sleep_behavior.py` centralizes the high-level `IDLE`, `SITTING`, `WAVING`,
+`SLEEPING`, and `REMINDER` transitions. Sleep never modifies the saved pose.
+One single-shot inactivity timer owns the deadline; the existing idle guard
+rechecks blockers. Entering sleep cancels blink/wave timers and uses the pet's
+owned Qt property animation; waking restores the selected pose and a fresh
+30-second deadline. `IdleController` retains only the blink/wave presentation
+substates and cannot overwrite sleeping frames with stale callbacks.
 
 ### Mood
 
@@ -239,7 +266,10 @@ Available generation prompts and export notes are preserved in `assets/*prompt*.
 Those files record the available provenance, not a complete reproduction pipeline
 for every asset, and do not establish ownership of the original reference.
 
-Runtime uses the six 1024px standing/sitting open-eye, blink, and wave sprites.
+Runtime uses the six 1024px standing/sitting open-eye, blink, and wave sprites,
+plus `superdpet_sleeping_1024.png`. The sleeping artwork was generated with the
+built-in image tool using the standing character as the identity reference;
+its prompt and canvas export details are in `assets/superdpet_sleeping_prompt.txt`.
 The current 256px variants, reference image, and prompt files are retained.
 Unused legacy idle/full-body/blink exports have been removed. Preserved prompts
 may name those historical exports; they are not required by the running app.

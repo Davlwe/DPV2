@@ -18,6 +18,7 @@ from preferences import Preferences
 from settings_dialog import SettingsDialog
 from startup import StartupRegistration
 from idle_behavior import IdleController, PetSprite, blink_log
+from sleep_behavior import SleepController, PetState
 from mood import TaskMood, MOOD_COLORS, MOOD_REFRESH_MS
 from ui_icons import CONTROL_STYLE, icon, menu_action, style_button, style_button_box
 
@@ -88,6 +89,11 @@ class PetWindow(QWidget):
         if self.preferences.pose == 'sitting' and 'sitting' in self.pose_frames:
             self.pose = 'sitting'
             self.pet.set_frames(*self.pose_frames[self.pose])
+        sleeping = QPixmap(str(Path(__file__).resolve().parent / 'assets' / 'superdpet_sleeping_1024.png'))
+        if not sleeping.isNull() and sleeping.size() == sprite.size():
+            self.pet.sleep_frame = sleeping
+        else:
+            print('[SuperDpet ERROR] Sleeping asset missing/invalid; sleep uses the current pose with closed eyes and Zzz.', flush=True)
 
         self.bubble = QLabel(self)
         self.bubble.setGeometry(8, 42 if self.pose == 'sitting' else 2,
@@ -132,6 +138,7 @@ class PetWindow(QWidget):
             'stand' if self.pose == 'sitting' else 'sit',
             'Stand up' if self.pose == 'sitting' else 'Sit down', self.toggle_pose)
         self.pose_action.setEnabled('sitting' in self.pose_frames)
+        self.sleep_action = menu_action(self.settings_menu, 'sleep', 'Sleep', self.request_sleep)
         menu_action(self.settings_menu, 'settings', "Settings", self.show_settings)
         menu_action(self.settings_menu, 'notes', "View notes", self.view_notes)
         if self.dev_mode:
@@ -181,6 +188,9 @@ class PetWindow(QWidget):
         if screen is not None:
             self.move(screen.availableGeometry().center() - self.rect().center())
         self.idle = IdleController(self)
+        self.sleep = SleepController(self)
+        for menu in (self.settings_menu, self.tray_menu) if hasattr(self, 'tray_menu') else (self.settings_menu,):
+            menu.triggered.connect(lambda _action: self.sleep.activity())
         self.mood = TaskMood()
         self.mood_timer = QTimer(self)
         self.mood_timer.setInterval(MOOD_REFRESH_MS)
@@ -189,9 +199,15 @@ class PetWindow(QWidget):
         self.refresh_mood()
         self.mood_timer.start()
 
+    def request_sleep(self):
+        # Let the menu close and finish dispatching its activity signals first.
+        self.settings_menu.hide()
+        QTimer.singleShot(0, self.sleep.enter_sleep)
+
     def toggle_pose(self):
         if self.quitting:
             return
+        self.sleep.activity()
         target = 'sitting' if self.pose == 'standing' else 'standing'
         if target not in self.pose_frames:
             print(f'[SuperDpet ERROR] Cannot switch to {target}; assets unavailable.', flush=True)
@@ -204,6 +220,7 @@ class PetWindow(QWidget):
         self.idle.pause()
         self.pet.stop_action()
         self.pose = target
+        self.sleep.transition(PetState.REMINDER if self.reminder_active else self.sleep.resting_state())
         self.bubble.move(8, 42 if target == 'sitting' else 2)
         self.pet.set_frames(*self.pose_frames[target])
         self.pose_action.setText('Stand up' if target == 'sitting' else 'Sit down')
@@ -235,6 +252,7 @@ class PetWindow(QWidget):
             self.pet.show_frame(self.pet.frame_name)
 
     def task_completed(self):
+        self.sleep.activity()
         self.refresh_mood(completed_task=True)
         self.idle.completed()
 
@@ -249,6 +267,7 @@ class PetWindow(QWidget):
         self.show_settings()
 
     def show_settings(self):
+        self.sleep.activity()
         self.hide_interaction()
         first_run = (self.preferences.startup_permission is None
                      and not self.preferences.load_error and not self.startup.unsupported_reason)
@@ -320,6 +339,7 @@ class PetWindow(QWidget):
 
     def set_reminder_appearance(self, active):
         self.reminder_active = active
+        self.sleep.reminder_changed()
         self.apply_task_glow()
         if active:
             self.hide_interaction()
@@ -380,6 +400,7 @@ class PetWindow(QWidget):
         self.tray_notice.show()
 
     def hide_pet(self):
+        self.sleep.activity()
         if not QSystemTrayIcon.isSystemTrayAvailable():
             self.show_pet()
             self.explain_missing_tray()
@@ -398,6 +419,7 @@ class PetWindow(QWidget):
     def show_pet(self):
         if self.quitting:
             return
+        self.sleep.activity()
         if not self.isVisible() and self.saved_pet_position is not None:
             position = QPoint(self.saved_pet_position)
             screens = QApplication.screens()
@@ -418,6 +440,7 @@ class PetWindow(QWidget):
         self.reminder_timer.stop()
         self.mood_timer.stop()
         self.bubble_timer.stop()
+        self.sleep.stop()
         self.idle.stop()
         self.tray.hide()
 
@@ -437,6 +460,7 @@ class PetWindow(QWidget):
         )
 
     def add_note(self):
+        self.sleep.activity()
         self.hide_interaction()
         dialog = AddNoteDialog(self.store, self,
                               default_reminder_minutes=self.preferences.default_reminder_minutes)
@@ -444,6 +468,7 @@ class PetWindow(QWidget):
         dialog.exec()
 
     def view_notes(self):
+        self.sleep.activity()
         self.hide_interaction()
         dialog = NotesDialog(self.store, self)
         dialog.note_completed.connect(self.task_completed)
@@ -497,8 +522,9 @@ class PetWindow(QWidget):
                 self.dragging = True
                 self.drag_activity.restart()
                 self.hide_interaction()
-                self.idle.pause()
-                self.pet.stop_action()
+                if not self.sleep.sleeping:
+                    self.idle.pause()
+                    self.pet.stop_action()
                 # X11/WSL, Windows and macOS support direct movement, retaining
                 # mouse release delivery. Only Wayland requires compositor move.
                 handle = self.windowHandle()
