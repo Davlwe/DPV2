@@ -176,35 +176,6 @@ In PowerShell, set `$env:SUPERDPET_DEV_MODE = "1"` or
 remove the chosen variable with `Remove-Item Env:SUPERDPET_DEV_MODE` or
 `Remove-Item Env:SUPERDPET_DEBUG` before normal use.
 
-## AI assistance and asset provenance
-
-UI icons are drawn locally with Qt using rounded blue-to-white badges and dark
-blue symbols. They scale to the requested size without an additional dependency.
-Buttons retain text labels, with hover, pressed, focus, and disabled treatments.
-The pet character artwork is separate from these UI icons.
-
-Development was assisted by **OpenAI Codex**, including implementation, debugging,
-tests, and documentation. The runtime uses local Python/Qt logic; greetings are
-selected from predefined text and moods are derived from task counts.
-
-The original character reference is retained as `assets/reference.png`. Character
-sprites and animation variants were created with AI image-generation/editing
-assistance based on that reference, with local image preparation and resizing.
-Available generation prompts and export notes are preserved in `assets/*prompt*.txt`.
-Those files record the available provenance, not a complete reproduction pipeline
-for every asset, and do not establish ownership of the original reference.
-
-Runtime uses the six 1024px standing/sitting open-eye, blink, and wave sprites,
-plus `superdpet_sleeping_1024.png`. The sleeping artwork was generated with the
-built-in image tool using the standing character as the identity reference;
-its prompt and canvas export details are in `assets/superdpet_sleeping_prompt.txt`.
-The current 256px variants, reference image, and prompt files are retained.
-Unused legacy idle/full-body/blink exports have been removed. Preserved prompts
-may name those historical exports; they are not required by the running app.
-`scripts/prepare_superdpet.py` is a legacy reference-preparation utility that
-writes the older idle sprites; it is not needed for setup and does not generate
-the current animation set.
-
 ## License
 
 No license has been selected yet. This repository does not currently grant an
