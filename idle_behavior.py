@@ -62,6 +62,8 @@ class PetSprite(QLabel):
     def set_action_phase(self, value):
         self._action_phase = value
         self.update()
+        # Repaint the parent as motion vacates pixels, including the glow.
+        self.window().update()
 
     action_phase = Property(float, get_action_phase, set_action_phase)
 
@@ -80,6 +82,7 @@ class PetSprite(QLabel):
         self.action_kind = None
         self._action_phase = 0.0
         self.update()
+        self.window().update()
 
     def set_frames(self, open_frame, blink_frame, wave_frame=None):
         self.open_frame = open_frame
@@ -111,6 +114,9 @@ class PetSprite(QLabel):
             effect = self.graphicsEffect()
             if effect is not None and effect.isEnabled():
                 effect.update()
+            # Include the old silhouette and the glow outside the child bounds
+            # when repainting the translucent top-level backing store.
+            self.window().update()
         blink_log(f'SPRITE {name} applied revision={self.frame_revision}')
 
     def set_blinking(self, closed):

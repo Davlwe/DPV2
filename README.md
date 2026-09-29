@@ -35,7 +35,9 @@ python3.14 -m venv .venv
 ### macOS
 
 Install Python 3.14 and run the same commands as Linux from a graphical desktop
-session. Native macOS GUI and sign-in behavior still need platform testing.
+session. The app has been tried on macOS by the project owner. A stale outline during
+pose changes was reported; the fix still needs a macOS retest. Actual sign-in
+behavior remains unverified.
 
 ### Windows (PowerShell)
 
@@ -90,7 +92,8 @@ permission for the next sign-in.
 ## Platform limitations
 
 - **Test coverage:** automated tests and visible Wayland checks were run in the
-  development environment. Native Windows/macOS GUI and actual sign-in behavior
+  development environment. The owner has tried the macOS GUI and reported a pose-change outline issue;
+  its fix needs a native retest. Native Windows GUI and actual sign-in behavior
   are not yet verified. Mocked OS-registration tests are not native sign-in tests.
 - **Tray:** some desktops do not provide a system tray. The app displays an
   informational notice and stays accessible; hiding to the tray is unavailable.
@@ -176,8 +179,55 @@ In PowerShell, set `$env:SUPERDPET_DEV_MODE = "1"` or
 remove the chosen variable with `Remove-Item Env:SUPERDPET_DEV_MODE` or
 `Remove-Item Env:SUPERDPET_DEBUG` before normal use.
 
+<<<<<<< HEAD
+=======
+## AI assistance and asset provenance
+
+UI icons are drawn locally with Qt using rounded blue-to-white badges and dark
+blue symbols. They scale to the requested size without an additional dependency.
+Buttons retain text labels, with hover, pressed, focus, and disabled treatments.
+The pet character artwork is separate from these UI icons.
+
+Development was assisted by **OpenAI Codex**, including implementation, debugging,
+tests, and documentation. The runtime uses local Python/Qt logic; greetings are
+selected from predefined text and moods are derived from task counts.
+
+The original character reference is not included in this checkout. Character
+sprites and animation variants were created with AI image-generation/editing
+assistance based on that reference, with local image preparation and resizing.
+Available generation prompts and export notes are preserved in `assets/*prompt*.txt`.
+Those files record the available provenance, not a complete reproduction pipeline
+for every asset, and do not establish ownership of the original reference.
+
+Runtime uses the six 1024px standing/sitting open-eye, blink, and wave sprites,
+plus `superdpet_sleeping_1024.png`. The sleeping artwork was generated with the
+built-in image tool using the standing character as the identity reference;
+its prompt and canvas export details are in `assets/superdpet_sleeping_prompt.txt`.
+The current 256px variants and prompt files are retained.
+Unused legacy idle/full-body/blink exports have been removed. Preserved prompts
+may name those historical exports; they are not required by the running app.
+`scripts/prepare_superdpet.py` is a legacy reference-preparation utility that
+writes the older idle sprites; it is not needed for setup and does not generate
+the current animation set.
+
+>>>>>>> 277a4f2 (Minor fix for changing position previous outline)
 ## License
 
 No license has been selected yet. This repository does not currently grant an
 open-source license for its code or artwork. Code licensing and rights to the
 reference and generated assets must be clarified before reuse or redistribution.
+
+## Submission materials
+
+See [submission/README.md](submission/README.md) for the Devpost description,
+technology inventory, three interface screenshots, demo narration, and remaining
+team/upload steps. Public source: https://github.com/Davlwe/DPV2.
+
+### macOS pose repaint check
+
+After restarting the updated app, switch standing → sleeping → awake, then
+sitting → sleeping → awake several times. Check on light and dark desktop
+backgrounds that the previous silhouette disappears and the current mood glow
+remains. Also check waves and reminder dismissal. The pet disables the native
+window shadow and repaints the full window on sprite changes; its own colored
+glow remains enabled. This fix has not yet been verified on macOS.

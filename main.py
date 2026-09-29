@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QPoint, QRect, Qt, QTimer, QElapsedTimer
-from PySide6.QtGui import QColor, QPixmap
+from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QGraphicsDropShadowEffect, QLabel, QMenu, QMessageBox,
     QHBoxLayout, QPlainTextEdit, QPushButton, QSystemTrayIcon, QVBoxLayout, QWidget,
@@ -39,7 +39,10 @@ class PetWindow(QWidget):
         self.startup = StartupRegistration()
         self.setWindowTitle("SuperDpet — My Desktop Pet")
         self.setWindowIcon(icon('pet'))
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        # The sprite already owns its mood/reminder glow. A native window
+        # shadow can retain the previous silhouette on macOS after pose swaps.
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint
+                            | Qt.WindowType.NoDropShadowWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         sprite = QPixmap(str(Path(__file__).resolve().parent / "assets" / "superdpet_standing_1024.png"))
         self.has_sprite = not sprite.isNull()
@@ -198,6 +201,16 @@ class PetWindow(QWidget):
         self.store.changed.connect(self.refresh_mood)
         self.refresh_mood()
         self.mood_timer.start()
+
+    def paintEvent(self, event):
+        # Translucent windows must erase old alpha as well as repaint new
+        # artwork. SourceOver with transparent paint leaves old pixels intact.
+        # Clear on the parent, before Qt paints children and their glow, so
+        # disappearing greetings and smaller poses leave no outline behind.
+        painter = QPainter(self)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+        painter.fillRect(self.rect(), Qt.GlobalColor.transparent)
+        painter.end()
 
     def request_sleep(self):
         # Let the menu close and finish dispatching its activity signals first.
@@ -480,11 +493,13 @@ class PetWindow(QWidget):
         self.bubble.show()
         self.note_actions.show()
         self.restart_idle_timer()
+        self.update()
 
     def hide_interaction(self):
         self.bubble_timer.stop()
         self.bubble.hide()
         self.note_actions.hide()
+        self.update()
 
     def restart_idle_timer(self):
         if self.bubble.isVisible():
