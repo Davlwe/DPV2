@@ -106,6 +106,42 @@ class TransparentRepaintTests(unittest.TestCase):
                     w.idle.blink_timer.stop()
                     self.assert_matches_clean_frame(retained)
 
+    def test_wave_rotation_and_reaction_glows_do_not_accumulate(self):
+        w = self.w
+        retained = self.surface()
+        for glow_enabled in (True, False):
+            w.reminder_glow.setEnabled(glow_enabled)
+            for action in ('wave', 'happy', 'alert'):
+                with self.subTest(glow=glow_enabled, action=action):
+                    w.pet.show_frame('wave' if action == 'wave' else 'open')
+                    w.pet.play_action(action)
+                    w.pet.action_animation.pause()
+                    for phase in (0.0, 0.25, 0.5, 0.75, 1.0):
+                        w.pet.set_action_phase(phase)
+                        self.assert_matches_clean_frame(retained)
+                    w.pet.stop_action()
+                    w.pet.show_frame('open')
+                    self.assert_matches_clean_frame(retained)
+
+    def test_backing_buffer_clears_hidden_greeting_before_fresh_render(self):
+        w = self.w
+        w.bubble.setText('Transparent backing buffer check')
+        w.show_interaction()
+        self.app.processEvents()
+        device = w.backingStore().paintDevice()
+        if not isinstance(device, QImage):
+            self.skipTest('Backend does not expose an image backing buffer')
+        # Unlike QWidget.render/grab, this observes the buffer after normal
+        # update processing, without requesting a fresh rendering of the widget.
+        point = w.bubble.geometry().center() * device.devicePixelRatio()
+        self.assertGreater(device.pixelColor(point).alpha(), 0)
+        w.hide_interaction()
+        self.app.processEvents()
+        image = w.backingStore().paintDevice().copy()
+        self.assertTrue(image.hasAlphaChannel())
+        self.assertEqual(image.pixelColor(point).alpha(), 0)
+        self.assertEqual(image.pixelColor(0, 0).alpha(), 0)
+
 
 if __name__ == '__main__':
     unittest.main()

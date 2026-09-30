@@ -179,8 +179,6 @@ In PowerShell, set `$env:SUPERDPET_DEV_MODE = "1"` or
 remove the chosen variable with `Remove-Item Env:SUPERDPET_DEV_MODE` or
 `Remove-Item Env:SUPERDPET_DEBUG` before normal use.
 
-<<<<<<< HEAD
-=======
 ## AI assistance and asset provenance
 
 UI icons are drawn locally with Qt using rounded blue-to-white badges and dark
@@ -210,7 +208,6 @@ may name those historical exports; they are not required by the running app.
 writes the older idle sprites; it is not needed for setup and does not generate
 the current animation set.
 
->>>>>>> 277a4f2 (Minor fix for changing position previous outline)
 ## License
 
 No license has been selected yet. This repository does not currently grant an
@@ -231,3 +228,7 @@ backgrounds that the previous silhouette disappears and the current mood glow
 remains. Also check waves and reminder dismissal. The pet disables the native
 window shadow and repaints the full window on sprite changes; its own colored
 glow remains enabled. This fix has not yet been verified on macOS.
+
+For a remaining dark silhouette, see the [rendering investigation and native
+diagnostic](docs/transparency.md). It separates the native window shadow, Qt
+backing buffer, and intentional mood glow using the real pet renderer.
